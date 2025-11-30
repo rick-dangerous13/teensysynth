@@ -64,8 +64,9 @@ bool ScriptManager::loadScript(uint8_t slot, const char* path) {
     
     scripts[slot].state = ScriptState::LOADING;
     
-    // Copy path
+    // Copy path with null termination
     strncpy(scripts[slot].path, path, sizeof(scripts[slot].path) - 1);
+    scripts[slot].path[sizeof(scripts[slot].path) - 1] = '\0';
     
     // Parse script header for metadata
     if (!parseScriptHeader(slot, path)) {
@@ -212,8 +213,9 @@ bool ScriptManager::parseScriptHeader(uint8_t slot, const char* path) {
     const char* lastSlash = strrchr(path, '/');
     const char* filename = lastSlash ? lastSlash + 1 : path;
     
-    // Copy filename as script name (without extension)
+    // Copy filename as script name (without extension) with null termination
     strncpy(scripts[slot].name, filename, sizeof(scripts[slot].name) - 1);
+    scripts[slot].name[sizeof(scripts[slot].name) - 1] = '\0';
     
     // Remove .lua or .scd extension if present
     char* dot = strrchr(scripts[slot].name, '.');

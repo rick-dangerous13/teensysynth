@@ -156,3 +156,8 @@ void Display::clearClipRegion() {
     clipW = SCREEN_WIDTH;
     clipH = SCREEN_HEIGHT;
 }
+
+void Display::getTextBounds(const char* text, int16_t x, int16_t y, int16_t* x1, int16_t* y1, uint16_t* w, uint16_t* h, uint8_t size) {
+    tft.setTextSize(size);
+    tft.getTextBounds(text, x, y, x1, y1, w, h);
+}

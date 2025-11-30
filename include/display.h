@@ -36,13 +36,13 @@ public:
     void drawWaveform(int16_t x, int16_t y, int16_t w, int16_t h, const int16_t* data, int16_t len);
     void drawScrollIndicator(int16_t y, int16_t totalItems, int16_t visibleItems, int16_t currentItem);
     
+    // Text measurement
+    void getTextBounds(const char* text, int16_t x, int16_t y, int16_t* x1, int16_t* y1, uint16_t* w, uint16_t* h, uint8_t size = FONT_MEDIUM);
+    
     // Screen regions for 4-script multitasking view
     void drawQuadrantDividers();
     void setClipRegion(uint8_t quadrant);
     void clearClipRegion();
-    
-    // Direct access to display object for advanced use
-    ILI9341_t3* getDisplay() { return &tft; }
 
 private:
     ILI9341_t3 tft;

@@ -236,9 +236,8 @@ void UI::drawMenuItem(int16_t y, const char* label, bool selected) {
     if (selected) {
         // Draw selection highlight
         display->fillRect(MARGIN, y - 2, SCREEN_WIDTH - 2 * MARGIN - 10, MENU_ITEM_H, COLOR_FG);
-        display->drawText(MARGIN + 5, y, label, COLOR_BG, FONT_MEDIUM);
         
-        // Selection indicator
+        // Selection indicator with label
         display->drawText(MARGIN + 5, y, ">", COLOR_BG, FONT_MEDIUM);
         display->drawText(MARGIN + 15, y, label, COLOR_BG, FONT_MEDIUM);
     } else {
@@ -299,8 +298,7 @@ void UI::drawFooter(const char* leftLabel, const char* rightLabel) {
     if (rightLabel && strlen(rightLabel) > 0) {
         int16_t x1, y1;
         uint16_t w, h;
-        display->getDisplay()->setTextSize(FONT_SMALL);
-        display->getDisplay()->getTextBounds(rightLabel, 0, 0, &x1, &y1, &w, &h);
+        display->getTextBounds(rightLabel, 0, 0, &x1, &y1, &w, &h, FONT_SMALL);
         display->drawText(SCREEN_WIDTH - MARGIN - w, SCREEN_HEIGHT - 18, rightLabel, COLOR_DIM, FONT_SMALL);
     }
 }
