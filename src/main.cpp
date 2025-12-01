@@ -9,7 +9,7 @@
  * - Teensy 4.1
  * - ILI9341 2.8" TFT Display (320x240)
  * - 2 buttons: OK (pin 2), Back (pin 3)
- * - Potentiometer for scrolling (A0)
+ * - Rotary encoder for scrolling (CLK: pin 4, DT: pin 5, SW: pin 6)
  * 
  * Author: TeensySynth Team
  * License: MIT
@@ -116,8 +116,8 @@ void handleWelcomeState() {
 }
 
 void handleMainMenuState() {
-    // Handle scrolling with potentiometer
-    int scrollDelta = input.getScrollDelta();
+    // Handle scrolling with encoder
+    int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
         ui.scrollMenu(scrollDelta);
     }
@@ -143,7 +143,7 @@ void handleMainMenuState() {
 
 void handleScriptSelectState() {
     // Handle scrolling
-    int scrollDelta = input.getScrollDelta();
+    int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
         ui.scrollMenu(scrollDelta);
     }
@@ -181,7 +181,7 @@ void handleScriptRunningState() {
 
 void handleSettingsState() {
     // Handle scrolling
-    int scrollDelta = input.getScrollDelta();
+    int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
         ui.scrollMenu(scrollDelta);
     }

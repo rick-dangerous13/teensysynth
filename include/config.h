@@ -48,14 +48,15 @@
 #define DEBOUNCE_DELAY 50  // milliseconds
 
 // ============================================================================
-// Potentiometer Configuration
+// Rotary Encoder Configuration (DEBO ENCODER)
 // ============================================================================
-#define POT_SCROLL    A0   // Scroll potentiometer pin
+#define ENC_CLK       4    // Encoder CLK pin
+#define ENC_DT        5    // Encoder DT pin
+#define ENC_SW        6    // Encoder switch (push button) pin
 
-// Potentiometer ADC settings (Teensy 4.1 has 10-bit ADC by default)
-#define POT_MIN       0
-#define POT_MAX       1023
-#define POT_DEADZONE  20   // Ignore small changes
+// Encoder settings
+#define ENC_STEPS_PER_NOTCH  4    // Pulses per detent/click
+#define ENC_DEBOUNCE_MS      5    // Debounce time for encoder transitions
 
 // ============================================================================
 // Script Manager Configuration

@@ -1,7 +1,7 @@
 /**
  * Input Handler Implementation
  * 
- * Handles button debouncing and potentiometer smoothing
+ * Handles button debouncing and rotary encoder reading
  */
 
 #include "input.h"
@@ -15,10 +15,20 @@ InputHandler::InputHandler() {
         buttonReleased[i] = false;
         lastDebounceTime[i] = 0;
     }
-    potValue = 0;
-    lastPotValue = 0;
-    scrollPosition = 0;
-    lastScrollPosition = 0;
+    
+    // Initialize encoder states
+    encoderPosition = 0;
+    lastEncoderPosition = 0;
+    lastEncoderCLK = HIGH;
+    lastEncoderDT = HIGH;
+    lastEncoderTime = 0;
+    
+    // Initialize encoder switch states
+    encoderSwitchState = false;
+    lastEncoderSwitchState = false;
+    encoderSwitchPressed = false;
+    encoderSwitchReleased = false;
+    encoderSwitchDebounceTime = 0;
 }
 
 void InputHandler::begin() {
@@ -26,17 +36,14 @@ void InputHandler::begin() {
     pinMode(BTN_OK, INPUT_PULLUP);
     pinMode(BTN_BACK, INPUT_PULLUP);
     
-    // Configure analog input for potentiometer
-    pinMode(POT_SCROLL, INPUT);
-    analogReadResolution(10);  // 10-bit ADC (0-1023)
+    // Configure encoder pins with internal pull-up resistors
+    pinMode(ENC_CLK, INPUT_PULLUP);
+    pinMode(ENC_DT, INPUT_PULLUP);
+    pinMode(ENC_SW, INPUT_PULLUP);
     
-    // Read initial potentiometer value
-    potValue = analogRead(POT_SCROLL);
-    lastPotValue = potValue;
-    
-    // Initialize scroll position based on pot value
-    scrollPosition = map(potValue, POT_MIN, POT_MAX, 0, 100);
-    lastScrollPosition = scrollPosition;
+    // Read initial encoder pin states
+    lastEncoderCLK = digitalRead(ENC_CLK);
+    lastEncoderDT = digitalRead(ENC_DT);
 }
 
 void InputHandler::update() {
@@ -45,13 +52,16 @@ void InputHandler::update() {
         buttonPressed[i] = false;
         buttonReleased[i] = false;
     }
+    encoderSwitchPressed = false;
+    encoderSwitchReleased = false;
     
     // Update buttons
     updateButton(0, BTN_OK);
     updateButton(1, BTN_BACK);
     
-    // Update potentiometer
-    updatePotentiometer();
+    // Update encoder
+    updateEncoder();
+    updateEncoderSwitch();
 }
 
 void InputHandler::updateButton(uint8_t index, uint8_t pin) {
@@ -80,15 +90,60 @@ void InputHandler::updateButton(uint8_t index, uint8_t pin) {
     lastButtonState[index] = reading;
 }
 
-void InputHandler::updatePotentiometer() {
-    // Read and smooth potentiometer value
-    int16_t rawValue = analogRead(POT_SCROLL);
+void InputHandler::updateEncoder() {
+    // Read current encoder pin states
+    uint8_t currentCLK = digitalRead(ENC_CLK);
+    uint8_t currentDT = digitalRead(ENC_DT);
     
-    // Apply simple exponential smoothing
-    potValue = (potValue * 3 + rawValue) / 4;
+    // Detect state changes with debouncing
+    unsigned long currentTime = millis();
+    if (currentTime - lastEncoderTime < ENC_DEBOUNCE_MS) {
+        return;  // Too soon, ignore
+    }
     
-    // Convert to scroll position (0-100)
-    scrollPosition = map(potValue, POT_MIN, POT_MAX, 0, 100);
+    // Check if CLK pin changed (falling edge)
+    if (currentCLK != lastEncoderCLK && currentCLK == LOW) {
+        // CLK went from HIGH to LOW
+        // Check DT to determine direction
+        if (currentDT == HIGH) {
+            // Clockwise rotation
+            encoderPosition++;
+        } else {
+            // Counter-clockwise rotation
+            encoderPosition--;
+        }
+        lastEncoderTime = currentTime;
+    }
+    
+    // Save current states
+    lastEncoderCLK = currentCLK;
+    lastEncoderDT = currentDT;
+}
+
+void InputHandler::updateEncoderSwitch() {
+    // Read encoder switch state (active low with pull-up)
+    bool reading = !digitalRead(ENC_SW);
+    
+    // Check if switch state has changed
+    if (reading != lastEncoderSwitchState) {
+        encoderSwitchDebounceTime = millis();
+    }
+    
+    // Apply debouncing
+    if ((millis() - encoderSwitchDebounceTime) > DEBOUNCE_DELAY) {
+        // State has been stable long enough
+        if (reading != encoderSwitchState) {
+            encoderSwitchState = reading;
+            
+            if (encoderSwitchState) {
+                encoderSwitchPressed = true;
+            } else {
+                encoderSwitchReleased = true;
+            }
+        }
+    }
+    
+    lastEncoderSwitchState = reading;
 }
 
 bool InputHandler::isButtonPressed(uint8_t button) {
@@ -109,23 +164,27 @@ bool InputHandler::isButtonReleased(uint8_t button) {
     return buttonReleased[index];
 }
 
-int16_t InputHandler::getPotValue() {
-    return potValue;
-}
-
-int16_t InputHandler::getScrollDelta() {
-    // Calculate scroll delta based on position change
-    int16_t delta = 0;
+int16_t InputHandler::getEncoderDelta() {
+    // Calculate encoder delta since last call
+    int16_t delta = encoderPosition - lastEncoderPosition;
+    lastEncoderPosition = encoderPosition;
     
-    // Check if position has changed significantly
-    int16_t diff = scrollPosition - lastScrollPosition;
-    
-    if (abs(diff) > 2) {  // Threshold to prevent jitter
-        delta = (diff > 0) ? 1 : -1;
-        lastScrollPosition = scrollPosition;
+    // Normalize to menu steps (divide by pulses per notch/detent)
+    // This gives us smoother control - one menu step per physical click
+    if (abs(delta) >= ENC_STEPS_PER_NOTCH) {
+        int16_t steps = delta / ENC_STEPS_PER_NOTCH;
+        return steps;
     }
     
-    return delta;
+    return 0;
+}
+
+bool InputHandler::isEncoderPressed() {
+    return encoderSwitchPressed;
+}
+
+bool InputHandler::isEncoderReleased() {
+    return encoderSwitchReleased;
 }
 
 uint8_t InputHandler::getButtonIndex(uint8_t button) {

@@ -13,24 +13,36 @@ A Teensy 4.1-based synthesizer in Doepfer Eurorack format with a Norns Shield-st
 ## Hardware Requirements
 
 - Teensy 4.1 (600MHz ARM Cortex-M7)
-- ILI9341 2.8" TFT Display (320x240)
+- ILI9341 2.8" TFT Display (320x240, SPI)
 - 2 momentary push buttons
-- 1 potentiometer (10K linear)
+- 1 rotary encoder with push button (DEBO ENCODER)
 - Eurorack power supply (±12V)
 
 ### Pin Connections
 
-| Component | Teensy Pin |
-|-----------|------------|
-| TFT DC    | 9          |
-| TFT CS    | 10         |
-| TFT RST   | 8          |
-| TFT MOSI  | 11         |
-| TFT SCLK  | 13         |
-| TFT MISO  | 12         |
-| OK Button | 2          |
-| Back Button | 3        |
-| Scroll Pot | A0        |
+#### ILI9341 Display
+| Display Pin | Teensy 4.1 Pin | Notes |
+|-------------|----------------|-------|
+| SDO (MISO)  | 12            | Hardware SPI |
+| LED         | 3.3V          | Backlight (always on) |
+| SCK         | 13            | Hardware SPI |
+| SDI (MOSI)  | 11            | Hardware SPI |
+| DC          | 9             | Data/Command select |
+| RESET       | 8             | Reset |
+| CS          | 10            | Chip Select |
+| GND         | GND           | Ground |
+| VCC         | 3.3V          | **3.3V ONLY** |
+
+#### Buttons & Encoder
+| Component | Teensy Pin | Notes |
+|-----------|------------|-------|
+| OK Button | 2          | Momentary, pull-up |
+| Back Button | 3        | Momentary, pull-up |
+| Encoder CLK | 4        | Rotary encoder A |
+| Encoder DT  | 5        | Rotary encoder B |
+| Encoder SW  | 6        | Encoder push button |
+| Encoder +   | 3.3V     | Power |
+| Encoder GND | GND      | Ground |
 
 ## Building
 
@@ -49,7 +61,8 @@ pio run --target upload
 
 ## Controls
 
-- **Potentiometer**: Scroll through menus and options
+- **Rotary Encoder**: Turn to scroll through menus and options
+- **Encoder Button**: Alternative select (same as OK button)
 - **OK Button**: Select/confirm
 - **Back Button**: Go back/cancel
 
