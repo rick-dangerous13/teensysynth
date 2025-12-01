@@ -72,18 +72,29 @@ end
 ```
 MCP4725        Teensy 4.1
 --------       ----------
-VCC     →      3.3V
+VDD     →      5V (for 0-5V output range)
 GND     →      GND
 SDA     →      18 (SDA)
 SCL     →      19 (SCL)
-OUT     →      CV destination (0-5V)
+VOUT    →      TRRS Jack (Left or Ring pin)
+```
+
+### TRRS Jack Wiring for CV Output
+```
+TRRS Jack Pin      Connection
+-------------      ----------
+Sleeve      →      GND (common ground)
+Left/Ring   →      MCP4725 VOUT (CV signal 0-5V)
+Right       →      (unused or additional CV channel)
 ```
 
 **Important Notes:**
-- The MCP4725 outputs 0-VCC voltage (with VCC at 3.3V or 5V)
-- For full 0-5V range, power the MCP4725 with 5V
-- Connect to Eurorack CV inputs (typically 0-5V or 0-10V range)
-- Multiple DACs can be added by using different I2C addresses
+- The MCP4725 outputs 0-VDD voltage
+- **Power MCP4725 with 5V** (not 3.3V) for full 0-5V Eurorack CV range
+- VOUT connects to TRRS Left or Ring channel for CV output
+- TRRS Sleeve must connect to GND for proper signal reference
+- The CV signal is available at the TRRS jack output
+- Multiple DACs can be added using different I2C addresses (0x60, 0x61, etc.)
 
 ## Script Slots
 

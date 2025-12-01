@@ -21,15 +21,17 @@ bool LFOScript::begin() {
     Wire.begin();
     
     // Initialize MCP4725 DAC
-    if (!dac.begin(MCP4725_ADDR)) {
+    if (!dac.begin(MCP4725_CV_ADDR)) {
         Serial.println("LFO: WARNING - MCP4725 DAC not found, running without CV output");
+        Serial.println("     Check wiring: VDD->5V, GND->GND, SDA->18, SCL->19");
         dacInitialized = false;
         // Continue anyway - allow visual display without hardware
     } else {
         dacInitialized = true;
         // Set initial output to 0V
         dac.setVoltage(0, false);
-        Serial.println("LFO: Initialized successfully with DAC");
+        Serial.println("LFO: Initialized successfully with MCP4725 DAC");
+        Serial.println("     CV output available on VOUT pin (connect to TRRS jack)");
     }
     
     lastUpdateMicros = micros();
@@ -39,8 +41,6 @@ bool LFOScript::begin() {
 }
 
 void LFOScript::update() {
-    if (!dacInitialized) return;
-    
     // Calculate time delta
     unsigned long currentMicros = micros();
     unsigned long deltaMicros = currentMicros - lastUpdateMicros;
@@ -64,7 +64,9 @@ void LFOScript::update() {
     uint16_t dacValue = voltageToDACValue(outputVoltage);
     
     // Update DAC (false = don't write to EEPROM)
-    dac.setVoltage(dacValue, false);
+    if (dacInitialized) {
+        dac.setVoltage(dacValue, false);
+    }
 }
 
 void LFOScript::stop() {

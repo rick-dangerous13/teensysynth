@@ -23,8 +23,16 @@ struct ScriptSlot {
     char path[64];
     char lastPath[64];  // Previous output for change detection
     bool active;
-    uint8_t waveType;  // 0=Sine, 1=Triangle, 2=Square, 3=Saw
-    float phase;       // Current phase for animation
+    uint8_t scriptType;  // 0=LFO, 1=Sequencer, etc.
+    uint8_t waveType;  // 0=Sine, 1=Triangle, 2=Square, 3=Saw (for LFO)
+    float phase;       // Current phase for animation (for LFO)
+    uint8_t seqCurrentStep;  // Current step for sequencer
+    int8_t seqStepValues[8]; // Step values for sequencer
+    uint8_t seqEditStep;     // Which step is being edited
+    // Previous state tracking for sequencer (to avoid flickering)
+    uint8_t lastSeqCurrentStep;
+    int8_t lastSeqStepValues[8];
+    uint8_t lastSeqEditStep;
 };
 
 class UI {
@@ -55,13 +63,32 @@ public:
     void updateScriptInfo(uint8_t slot, const char* name);
     void updateScriptOutput(uint8_t slot, const char* output);  // Update output text
     void updateScriptWaveform(uint8_t slot, uint8_t waveType, float phase);  // Update waveform display
+    void updateScriptSequencer(uint8_t slot, uint8_t currentStep, int8_t stepValues[8]);  // Update sequencer display
     void updateScriptDisplay(uint8_t slot, const char* output);
+    void setScriptType(uint8_t slot, uint8_t type);  // Set script type for proper visualization
     
     // Settings control
     void toggleSettingValue();
     
+    // Global clock
+    float getClockTempo() const { return clockTempo; }
+    void setClockTempo(float bpm);
+    
+    // Multitasking mode
+    bool getMultitaskingMode() const { return multitaskingMode; }
+    void toggleMultitaskingMode() { multitaskingMode = !multitaskingMode; }
+    
+    // Sequencer editing
+    uint8_t getSequencerEditStep(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].seqEditStep : 0; }
+    void advanceSequencerEditStep(uint8_t slot);
+    void adjustSequencerStepValue(uint8_t slot, int8_t delta);
+    
 private:
     Display* display;
+    
+    // Global settings
+    float clockTempo;
+    bool multitaskingMode;  // true=4 quadrants, false=full screen
     
     // Menu state
     int16_t menuSelection;
@@ -80,6 +107,7 @@ private:
     // Helper drawing methods
     void drawMenuItem(int16_t y, const char* label, bool selected);
     void drawScriptSlot(uint8_t slot, bool selected);
+    void drawSequencerSliders(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
     void drawHeader(const char* title);
     void drawFooter(const char* leftLabel, const char* rightLabel);
 };

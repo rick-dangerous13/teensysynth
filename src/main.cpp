@@ -166,21 +166,50 @@ void handleScriptSelectState() {
                 if (scriptManager.getLFOWaveformData(i, &waveType, &phase)) {
                     ui.updateScriptWaveform(i, waveType, phase);
                 }
+                
+                // Update sequencer data if it's a sequencer
+                uint8_t currentStep;
+                int8_t stepValues[8];
+                if (scriptManager.getSequencerData(i, &currentStep, stepValues)) {
+                    ui.updateScriptSequencer(i, currentStep, stepValues);
+                }
             }
         }
         lastRefresh = millis();
         ui.showScriptSelectScreen();  // Refresh display
     }
     
-    // Handle scrolling
+    // Handle encoder input
     int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
-        ui.scrollMenu(scrollDelta);
-        ui.showScriptSelectScreen();  // Partial redraw
+        // If slot 0 is active and is a sequencer, adjust step value
+        if (scriptManager.isScriptRunning(0)) {
+            uint8_t dummy;
+            int8_t dummySteps[8];
+            if (scriptManager.getSequencerData(0, &dummy, dummySteps)) {
+                // Sequencer is running - adjust current edit step value
+                ui.adjustSequencerStepValue(0, scrollDelta);
+                // Update script manager with new values
+                scriptManager.setSequencerStepValue(0, ui.getSequencerEditStep(0), 
+                                                   dummySteps[ui.getSequencerEditStep(0)] + scrollDelta);
+            }
+        }
     }
     
-    // Handle OK button - go to script library browser
+    // Handle OK button - advance to next step for editing or go to library
     if (input.isButtonPressed(BTN_OK)) {
+        if (scriptManager.isScriptRunning(0)) {
+            uint8_t dummy;
+            int8_t dummySteps[8];
+            if (scriptManager.getSequencerData(0, &dummy, dummySteps)) {
+                // Sequencer is running - advance edit step
+                ui.advanceSequencerEditStep(0);
+                ui.showScriptSelectScreen();
+                return;
+            }
+        }
+        
+        // No sequencer running - go to script library
         int slot = ui.getSelectedSlot();
         ui.setSelectedSlot(slot);
         currentState = AppState::SCRIPT_LIBRARY;
@@ -206,18 +235,40 @@ void handleScriptLibraryState() {
     
     // Handle OK button - load selected script
     if (input.isButtonPressed(BTN_OK)) {
-        int slot = ui.getSelectedSlot();
+        int slot = 0;  // Always use slot 0 (only slot available)
         int libraryIndex = ui.getSelectedMenuItem();
+        
+        Serial.print("Loading script ");
+        Serial.print(libraryIndex);
+        Serial.print(" into slot ");
+        Serial.println(slot);
         
         if (scriptManager.loadScriptFromLibrary(slot, libraryIndex)) {
             ui.updateScriptStatus(slot, true);
             // Update script info in UI
             const char* scriptName = scriptManager.getScriptName(slot);
             ui.updateScriptInfo(slot, scriptName);
+            // Set script type for proper visualization (0=LFO, 1=Sequencer)
+            ui.setScriptType(slot, libraryIndex);
+            
+            Serial.print("Script loaded: ");
+            Serial.println(scriptName);
+            Serial.print("Script type set to: ");
+            Serial.println(libraryIndex);
+            
+            // Initialize sequencer data if it's a sequencer
+            if (libraryIndex == 1) {
+                int8_t defaultSteps[8] = {0, 2, 4, 5, 7, 9, 11, 12}; // Ascending scale
+                ui.updateScriptSequencer(slot, 0, defaultSteps);
+                Serial.println("Sequencer data initialized");
+            }
+            
             // Go back to script select screen
             currentState = AppState::SCRIPT_SELECT;
             ui.resetMenuTracking();
             ui.showScriptSelectScreen();
+        } else {
+            Serial.println("Failed to load script");
         }
     }
     
@@ -247,11 +298,23 @@ void handleScriptRunningState() {
 }
 
 void handleSettingsState() {
-    // Handle scrolling
+    int selectedSetting = ui.getSelectedMenuItem();
+    
+    // Handle encoder
     int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
-        ui.scrollMenu(scrollDelta);
-        ui.showSettingsScreen();  // Partial redraw
+        // If clock is selected (item 0), adjust tempo
+        if (selectedSetting == 0) {
+            float currentTempo = ui.getClockTempo();
+            float newTempo = currentTempo + (scrollDelta * 5.0f);  // 5 BPM increments
+            ui.setClockTempo(newTempo);
+            scriptManager.setGlobalTempo(newTempo);
+            ui.showSettingsScreen();  // Refresh display
+        } else {
+            // Navigate between settings for other items
+            ui.scrollMenu(scrollDelta);
+            ui.showSettingsScreen();  // Partial redraw
+        }
     }
     
     // Handle OK button

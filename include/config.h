@@ -59,13 +59,40 @@
 #define ENC_DEBOUNCE_MS      2    // Debounce time for encoder transitions
 
 // ============================================================================
-// MCP4725 DAC Configuration (Eurorack CV Output)
+// MCP4725 DAC Configuration (Eurorack CV/Gate Output)
 // ============================================================================
-#define MCP4725_ADDR  0x60  // Default I2C address
-// Teensy 4.1 I2C pins (Wire): SDA=18 (SDA), SCL=19 (SCL)
-// Connect: VCC->3.3V, GND->GND, SDA->18, SCL->19
+// CV Output DAC (Address 0x60)
+#define MCP4725_CV_ADDR   0x60  // CV output I2C address
+// Gate Output DAC (Address 0x61) - requires A0 pin tied to VDD
+#define MCP4725_GATE_ADDR 0x61  // Gate output I2C address
+
+// Both use Teensy 4.1 I2C pins (Wire): SDA=18, SCL=19
+// 
+// MCP4725 #1 (CV) Wiring:
+//   MCP4725 VDD  -> Teensy 5V (for 0-5V output range)
+//   MCP4725 GND  -> Teensy GND
+//   MCP4725 SDA  -> Teensy Pin 18 (SDA)
+//   MCP4725 SCL  -> Teensy Pin 19 (SCL)
+//   MCP4725 A0   -> GND (sets address to 0x60)
+//   MCP4725 VOUT -> TRRS Jack "Left" pin (CV output)
+// 
+// MCP4725 #2 (Gate) Wiring:
+//   MCP4725 VDD  -> Teensy 5V
+//   MCP4725 GND  -> Teensy GND
+//   MCP4725 SDA  -> Teensy Pin 18 (SDA) - shared I2C bus
+//   MCP4725 SCL  -> Teensy Pin 19 (SCL) - shared I2C bus
+//   MCP4725 A0   -> VDD (sets address to 0x61)
+//   MCP4725 VOUT -> TRRS Jack "Ring" pin (Gate output)
+// 
+// TRRS Jack Output:
+//   Left   -> CV output (0-5V analog)
+//   Ring   -> Gate output (0V/5V digital)
+//   Sleeve -> GND (common ground)
+// 
 #define DAC_MAX_VALUE 4095  // 12-bit DAC (0-4095)
-#define DAC_MAX_VOLTAGE 5.0 // Maximum output voltage
+#define DAC_MAX_VOLTAGE 5.0 // Maximum output voltage (requires VDD=5V)
+#define GATE_HIGH_VOLTAGE 5.0  // Gate high voltage
+#define GATE_LOW_VOLTAGE 0.0   // Gate low voltage
 
 // ============================================================================
 // Script Manager Configuration
@@ -101,5 +128,10 @@
 #define INPUT_UPDATE_INTERVAL   10
 #define DISPLAY_UPDATE_INTERVAL 16
 #define SCRIPT_UPDATE_INTERVAL  10
+
+// Global clock settings
+#define DEFAULT_CLOCK_BPM  120.0f
+#define MIN_CLOCK_BPM      20.0f
+#define MAX_CLOCK_BPM      300.0f
 
 #endif // CONFIG_H

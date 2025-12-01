@@ -9,15 +9,24 @@
 #include <stdio.h>
 #include <math.h>
 
-UI::UI() : display(nullptr), menuSelection(0), lastMenuSelection(-1), menuItemCount(0), scrollOffset(0), selectedScriptSlot(0) {
+UI::UI() : display(nullptr), clockTempo(DEFAULT_CLOCK_BPM), multitaskingMode(false), menuSelection(0), lastMenuSelection(-1), menuItemCount(0), scrollOffset(0), selectedScriptSlot(0) {
     // Initialize script slots
     for (int i = 0; i < MAX_SCRIPTS; i++) {
         strcpy(scriptSlots[i].name, "empty");
         scriptSlots[i].path[0] = '\0';
         scriptSlots[i].lastPath[0] = '\0';
         scriptSlots[i].active = false;
+        scriptSlots[i].scriptType = 255;  // No script
         scriptSlots[i].waveType = 0;
         scriptSlots[i].phase = 0.0f;
+        scriptSlots[i].seqCurrentStep = 0;
+        scriptSlots[i].seqEditStep = 0;
+        scriptSlots[i].lastSeqCurrentStep = 255;  // 255 = uninitialized
+        scriptSlots[i].lastSeqEditStep = 255;
+        for (int j = 0; j < 8; j++) {
+            scriptSlots[i].seqStepValues[j] = 0;
+            scriptSlots[i].lastSeqStepValues[j] = 0;
+        }
     }
     
     // Initialize menu items
@@ -91,20 +100,22 @@ void UI::showMainMenu() {
 void UI::showScriptSelectScreen() {
     if (!display) return;
     
-    menuItemCount = MAX_SCRIPTS;  // 4 script slots
+    menuItemCount = 1;  // Only slot 1 (for now, until we have 4 pairs of CV/Gate jacks)
     
     // Only do full redraw if this is initial display
     if (lastMenuSelection == -1) {
         display->clear();
-        display->drawQuadrantDividers();
+        if (multitaskingMode) {
+            display->drawQuadrantDividers();
+        }
         drawFooter("OK: load", "BACK: menu");
         lastMenuSelection = menuSelection;
     }
     
-    // Always redraw all script slots to show live updates
-    for (uint8_t i = 0; i < MAX_SCRIPTS; i++) {
-        drawScriptSlot(i, i == menuSelection);
-    }
+    // Always redraw script slots - only slot 0 for now
+    menuSelection = 0;  // Force selection to slot 0
+    selectedScriptSlot = 0;
+    drawScriptSlot(0, true);  // Always selected since it's the only available slot
 }
 
 void UI::showScriptLibraryScreen() {
@@ -168,15 +179,22 @@ void UI::showScriptRunningScreen() {
 void UI::showSettingsScreen() {
     if (!display) return;
     
-    // Setting items
+    // Setting items with dynamic values
+    static char clockLabel[32];
+    static char multitaskLabel[32];
+    snprintf(clockLabel, sizeof(clockLabel), "Clock: %.0f BPM", clockTempo);
+    snprintf(multitaskLabel, sizeof(multitaskLabel), "Multitask: %s", multitaskingMode ? "ON" : "OFF");
+    
     const char* settings[] = {
+        clockLabel,
+        multitaskLabel,
         "Audio Output",
         "MIDI Channel",
         "Display Brightness",
         "Script Auto-load"
     };
     
-    menuItemCount = 4;
+    menuItemCount = 6;
     
     // Only do full redraw if this is initial display
     if (lastMenuSelection == -1) {
@@ -302,8 +320,21 @@ void UI::updateScriptDisplay(uint8_t slot, const char* output) {
 }
 
 void UI::toggleSettingValue() {
-    // Placeholder for settings toggle functionality
-    // Would be expanded to handle specific settings
+    // Handle settings based on current selection
+    if (menuSelection == 0) {
+        // Clock tempo - controlled by encoder in main.cpp
+        showSettingsScreen();
+    } else if (menuSelection == 1) {
+        // Toggle multitasking mode
+        toggleMultitaskingMode();
+        showSettingsScreen();
+    }
+}
+
+void UI::setClockTempo(float bpm) {
+    if (bpm < MIN_CLOCK_BPM) bpm = MIN_CLOCK_BPM;
+    if (bpm > MAX_CLOCK_BPM) bpm = MAX_CLOCK_BPM;
+    clockTempo = bpm;
 }
 
 void UI::drawMenuItem(int16_t y, const char* label, bool selected) {
@@ -328,11 +359,21 @@ void UI::drawMenuItem(int16_t y, const char* label, bool selected) {
 void UI::drawScriptSlot(uint8_t slot, bool selected) {
     if (!display || slot >= MAX_SCRIPTS) return;
     
-    // Calculate quadrant position
-    int16_t x = (slot % 2) * (SCREEN_WIDTH / 2);
-    int16_t y = (slot / 2) * (SCREEN_HEIGHT / 2);
-    int16_t w = SCREEN_WIDTH / 2 - 2;
-    int16_t h = SCREEN_HEIGHT / 2 - 2;
+    // Calculate position based on multitasking mode
+    int16_t x, y, w, h;
+    if (multitaskingMode) {
+        // Quadrant mode (future)
+        x = (slot % 2) * (SCREEN_WIDTH / 2);
+        y = (slot / 2) * (SCREEN_HEIGHT / 2);
+        w = SCREEN_WIDTH / 2 - 2;
+        h = SCREEN_HEIGHT / 2 - 2;
+    } else {
+        // Full screen mode
+        x = 0;
+        y = 0;
+        w = SCREEN_WIDTH;
+        h = SCREEN_HEIGHT;
+    }
     
     // Draw slot border (selection indicator)
     if (selected) {
@@ -353,87 +394,83 @@ void UI::drawScriptSlot(uint8_t slot, bool selected) {
         // Draw running indicator (cyan dot)
         display->fillCircle(x + w - 10, y + 10, 4, COLOR_ACCENT);
         
-        // Check if parameters changed
-        bool parametersChanged = strcmp(scriptSlots[slot].path, scriptSlots[slot].lastPath) != 0;
+        // Debug: Show script type
+        char debugType[16];
+        snprintf(debugType, sizeof(debugType), "T:%d", scriptSlots[slot].scriptType);
+        display->drawText(x + 5, y + 18, debugType, COLOR_DIM, FONT_SMALL);
         
-        // Draw waveform visualization (double the height for better visibility)
-        int16_t waveX = x + 8;
-        int16_t waveY = y + 25;
-        int16_t waveW = w - 20;
-        int16_t waveH = 60;  // Doubled from 30
-        int16_t waveCenterY = waveY + waveH / 2;
-        
-        // Only clear and redraw if parameters changed
-        if (parametersChanged) {
-            // Clear only the content area (waveform + text), not the borders
-            display->fillRect(x + 6, waveY - 2, w - 12, h - 22, COLOR_BG);
+        // Render based on script type
+        if (scriptSlots[slot].scriptType == 0) {
+            // LFO - draw waveform visualization
+            bool parametersChanged = strcmp(scriptSlots[slot].path, scriptSlots[slot].lastPath) != 0;
             
-            // Update last path
-            strncpy(scriptSlots[slot].lastPath, scriptSlots[slot].path, sizeof(scriptSlots[slot].lastPath) - 1);
-            scriptSlots[slot].lastPath[sizeof(scriptSlots[slot].lastPath) - 1] = '\0';
-        } else {
-            // Just clear the waveform area for smooth animation
-            display->fillRect(waveX, waveY, waveW, waveH, COLOR_BG);
-        }
-        
-        // Draw waveform axis
-        display->drawLine(waveX, waveCenterY, waveX + waveW, waveCenterY, COLOR_DIM);
-        
-        // Draw waveform based on type
-        uint8_t waveType = scriptSlots[slot].waveType;
-        float phase = scriptSlots[slot].phase;
-        
-        for (int16_t i = 0; i < waveW; i++) {
-            float t = (float)i / waveW * 2.0f * PI + phase;
-            float value = 0.0f;
+            int16_t waveX = x + 8;
+            int16_t waveY = y + 25;
+            int16_t waveW = w - 20;
+            int16_t waveH = 60;
+            int16_t waveCenterY = waveY + waveH / 2;
             
-            switch (waveType) {
-                case 0: // Sine
-                    value = sin(t);
-                    break;
-                case 1: // Triangle
-                    {
+            if (parametersChanged) {
+                display->fillRect(x + 6, waveY - 2, w - 12, h - 22, COLOR_BG);
+                strncpy(scriptSlots[slot].lastPath, scriptSlots[slot].path, sizeof(scriptSlots[slot].lastPath) - 1);
+                scriptSlots[slot].lastPath[sizeof(scriptSlots[slot].lastPath) - 1] = '\0';
+            } else {
+                display->fillRect(waveX, waveY, waveW, waveH, COLOR_BG);
+            }
+            
+            display->drawLine(waveX, waveCenterY, waveX + waveW, waveCenterY, COLOR_DIM);
+            
+            uint8_t waveType = scriptSlots[slot].waveType;
+            float phase = scriptSlots[slot].phase;
+            
+            for (int16_t i = 0; i < waveW; i++) {
+                float t = (float)i / waveW * 2.0f * PI + phase;
+                float value = 0.0f;
+                
+                switch (waveType) {
+                    case 0: value = sin(t); break;
+                    case 1: {
                         float normalized = fmod(t, 2.0f * PI) / (2.0f * PI);
                         value = (normalized < 0.5f) ? (normalized * 4.0f - 1.0f) : (3.0f - normalized * 4.0f);
+                        break;
                     }
-                    break;
-                case 2: // Square
-                    value = (fmod(t, 2.0f * PI) < PI) ? 1.0f : -1.0f;
-                    break;
-                case 3: // Sawtooth
-                    value = 2.0f * (fmod(t, 2.0f * PI) / (2.0f * PI)) - 1.0f;
-                    break;
+                    case 2: value = (fmod(t, 2.0f * PI) < PI) ? 1.0f : -1.0f; break;
+                    case 3: value = 2.0f * (fmod(t, 2.0f * PI) / (2.0f * PI)) - 1.0f; break;
+                }
+                
+                int16_t pixelY = waveCenterY - (int16_t)(value * waveH * 0.4f);
+                display->drawPixel(waveX + i, pixelY, COLOR_ACCENT);
             }
             
-            int16_t pixelY = waveCenterY - (int16_t)(value * waveH * 0.4f);
-            display->drawPixel(waveX + i, pixelY, COLOR_ACCENT);
-        }
-        
-        // Draw parameters below waveform
-        int16_t textY = waveY + waveH + 5;
-        int16_t lineHeight = 10;
-        
-        // Parse and display parameters (only if they changed)
-        if (parametersChanged && strlen(scriptSlots[slot].path) > 0) {
-            char outputCopy[128];
-            strncpy(outputCopy, scriptSlots[slot].path, sizeof(outputCopy) - 1);
-            outputCopy[sizeof(outputCopy) - 1] = '\0';
-            
-            char* line = strtok(outputCopy, "\n");
-            int lineCount = 0;
-            
-            // Skip first line if it matches the script name (avoid duplication)
-            if (line != nullptr && strcmp(line, scriptSlots[slot].name) == 0) {
-                line = strtok(nullptr, "\n");
+            // Draw parameters
+            int16_t textY = waveY + waveH + 5;
+            if (parametersChanged && strlen(scriptSlots[slot].path) > 0) {
+                char outputCopy[128];
+                strncpy(outputCopy, scriptSlots[slot].path, sizeof(outputCopy) - 1);
+                outputCopy[sizeof(outputCopy) - 1] = '\0';
+                
+                char* line = strtok(outputCopy, "\n");
+                if (line != nullptr && strcmp(line, scriptSlots[slot].name) == 0) {
+                    line = strtok(nullptr, "\n");
+                }
+                
+                int lineCount = 0;
+                while (line != nullptr && textY < (y + h - 5) && lineCount < 3) {
+                    display->drawText(x + 8, textY, line, COLOR_FG, FONT_SMALL);
+                    textY += 10;
+                    line = strtok(nullptr, "\n");
+                    lineCount++;
+                }
             }
-            
-            // Display up to 3 parameter lines
-            while (line != nullptr && textY < (y + h - 5) && lineCount < 3) {
-                display->drawText(x + 8, textY, line, COLOR_FG, FONT_SMALL);
-                textY += lineHeight;
-                line = strtok(nullptr, "\n");
-                lineCount++;
-            }
+        } else if (scriptSlots[slot].scriptType == 1) {
+            // Sequencer - draw slider visualization
+            int16_t contentY = y + 25;
+            int16_t contentH = h - 30;
+            drawSequencerSliders(slot, x, contentY, w, contentH);
+        } else {
+            // Unknown script type - show error
+            display->fillRect(x + 6, y + 25, w - 12, h - 30, COLOR_BG);
+            display->drawText(x + 8, y + 40, "Unknown type", COLOR_DIM, FONT_SMALL);
         }
     } else {
         display->drawText(x + 20, y + 5, "empty", COLOR_DIM, FONT_MEDIUM);
@@ -465,5 +502,162 @@ void UI::drawFooter(const char* leftLabel, const char* rightLabel) {
         uint16_t w, h;
         display->getTextBounds(rightLabel, 0, 0, &x1, &y1, &w, &h, FONT_SMALL);
         display->drawText(SCREEN_WIDTH - MARGIN - w, SCREEN_HEIGHT - 18, rightLabel, COLOR_DIM, FONT_SMALL);
+    }
+}
+
+void UI::drawSequencerSliders(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h) {
+    if (!display || slot >= MAX_SCRIPTS) return;
+    
+    // Check if this is first draw or if parameters changed significantly
+    bool firstDraw = (scriptSlots[slot].lastSeqCurrentStep == 255);  // 255 = uninitialized
+    
+    // Calculate slider dimensions
+    int16_t sliderSpacing = 2;
+    int16_t sliderWidth = (w - 20) / 8 - sliderSpacing;
+    int16_t sliderHeight = h - 20;
+    int16_t sliderStartX = x + 10;
+    int16_t sliderStartY = y + 10;
+    
+    uint8_t currentStep = scriptSlots[slot].seqCurrentStep;
+    uint8_t editStep = scriptSlots[slot].seqEditStep;
+    uint8_t lastCurrentStep = scriptSlots[slot].lastSeqCurrentStep;
+    uint8_t lastEditStep = scriptSlots[slot].lastSeqEditStep;
+    
+    if (firstDraw) {
+        // First draw - clear everything and draw all sliders
+        display->fillRect(x + 4, y, w - 8, h, COLOR_BG);
+        
+        // Draw all 8 sliders
+        for (int i = 0; i < 8; i++) {
+            int16_t sliderX = sliderStartX + i * (sliderWidth + sliderSpacing);
+            int8_t stepValue = scriptSlots[slot].seqStepValues[i];
+            
+            // Draw slider background
+            display->drawRect(sliderX, sliderStartY, sliderWidth, sliderHeight, COLOR_DIM);
+            
+            // Calculate fill height
+            float normalizedValue = (float)(stepValue + 12) / 36.0f;
+            if (normalizedValue < 0.0f) normalizedValue = 0.0f;
+            if (normalizedValue > 1.0f) normalizedValue = 1.0f;
+            
+            int16_t fillHeight = (int16_t)(normalizedValue * (sliderHeight - 2));
+            int16_t fillY = sliderStartY + sliderHeight - 2 - fillHeight;
+            
+            // Choose color based on state
+            uint16_t fillColor = COLOR_DIM;
+            if (i == currentStep) {
+                fillColor = COLOR_ACCENT;
+            } else if (i == editStep) {
+                fillColor = COLOR_HIGHLIGHT;
+            }
+            
+            // Draw filled portion
+            if (fillHeight > 0) {
+                display->fillRect(sliderX + 1, fillY, sliderWidth - 2, fillHeight, fillColor);
+            }
+            
+            // Draw step number below slider
+            char stepNum[2];
+            snprintf(stepNum, sizeof(stepNum), "%d", i + 1);
+            display->drawText(sliderX + sliderWidth/2 - 3, sliderStartY + sliderHeight + 3, stepNum, 
+                             (i == editStep) ? COLOR_HIGHLIGHT : COLOR_DIM, FONT_SMALL);
+        }
+    } else {
+        // Selective update - only redraw changed sliders
+        for (int i = 0; i < 8; i++) {
+            int8_t stepValue = scriptSlots[slot].seqStepValues[i];
+            int8_t lastStepValue = scriptSlots[slot].lastSeqStepValues[i];
+            
+            // Check if this slider needs updating
+            bool needsUpdate = false;
+            if (stepValue != lastStepValue) needsUpdate = true;
+            if (i == currentStep && i != lastCurrentStep) needsUpdate = true;
+            if (i == lastCurrentStep && i != currentStep) needsUpdate = true;
+            if (i == editStep && i != lastEditStep) needsUpdate = true;
+            if (i == lastEditStep && i != editStep) needsUpdate = true;
+            
+            if (needsUpdate) {
+                int16_t sliderX = sliderStartX + i * (sliderWidth + sliderSpacing);
+                
+                // Clear the slider interior
+                display->fillRect(sliderX + 1, sliderStartY + 1, sliderWidth - 2, sliderHeight - 2, COLOR_BG);
+                
+                // Calculate fill height
+                float normalizedValue = (float)(stepValue + 12) / 36.0f;
+                if (normalizedValue < 0.0f) normalizedValue = 0.0f;
+                if (normalizedValue > 1.0f) normalizedValue = 1.0f;
+                
+                int16_t fillHeight = (int16_t)(normalizedValue * (sliderHeight - 2));
+                int16_t fillY = sliderStartY + sliderHeight - 2 - fillHeight;
+                
+                // Choose color based on state
+                uint16_t fillColor = COLOR_DIM;
+                if (i == currentStep) {
+                    fillColor = COLOR_ACCENT;
+                } else if (i == editStep) {
+                    fillColor = COLOR_HIGHLIGHT;
+                }
+                
+                // Draw filled portion
+                if (fillHeight > 0) {
+                    display->fillRect(sliderX + 1, fillY, sliderWidth - 2, fillHeight, fillColor);
+                }
+                
+                // Redraw step number if edit state changed
+                if ((i == editStep && i != lastEditStep) || (i == lastEditStep && i != editStep)) {
+                    char stepNum[2];
+                    snprintf(stepNum, sizeof(stepNum), "%d", i + 1);
+                    // Clear text area first
+                    display->fillRect(sliderX, sliderStartY + sliderHeight + 3, sliderWidth, 8, COLOR_BG);
+                    display->drawText(sliderX + sliderWidth/2 - 3, sliderStartY + sliderHeight + 3, stepNum, 
+                                     (i == editStep) ? COLOR_HIGHLIGHT : COLOR_DIM, FONT_SMALL);
+                }
+            }
+        }
+    }
+    
+    // Update tracking state
+    scriptSlots[slot].lastSeqCurrentStep = currentStep;
+    scriptSlots[slot].lastSeqEditStep = editStep;
+    for (int i = 0; i < 8; i++) {
+        scriptSlots[slot].lastSeqStepValues[i] = scriptSlots[slot].seqStepValues[i];
+    }
+}
+
+void UI::setScriptType(uint8_t slot, uint8_t type) {
+    if (slot < MAX_SCRIPTS) {
+        scriptSlots[slot].scriptType = type;
+    }
+}
+
+void UI::updateScriptSequencer(uint8_t slot, uint8_t currentStep, int8_t stepValues[8]) {
+    if (slot >= MAX_SCRIPTS) return;
+    
+    scriptSlots[slot].seqCurrentStep = currentStep;
+    if (stepValues) {
+        for (int i = 0; i < 8; i++) {
+            scriptSlots[slot].seqStepValues[i] = stepValues[i];
+        }
+    }
+}
+
+void UI::advanceSequencerEditStep(uint8_t slot) {
+    if (slot < MAX_SCRIPTS) {
+        scriptSlots[slot].seqEditStep = (scriptSlots[slot].seqEditStep + 1) % 8;
+    }
+}
+
+void UI::adjustSequencerStepValue(uint8_t slot, int8_t delta) {
+    if (slot >= MAX_SCRIPTS) return;
+    
+    uint8_t editStep = scriptSlots[slot].seqEditStep;
+    scriptSlots[slot].seqStepValues[editStep] += delta;
+    
+    // Clamp to valid range (-12 to +24)
+    if (scriptSlots[slot].seqStepValues[editStep] < -12) {
+        scriptSlots[slot].seqStepValues[editStep] = -12;
+    }
+    if (scriptSlots[slot].seqStepValues[editStep] > 24) {
+        scriptSlots[slot].seqStepValues[editStep] = 24;
     }
 }

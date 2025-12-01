@@ -11,6 +11,7 @@
 #include <Arduino.h>
 #include "config.h"
 #include "lfo_script.h"
+#include "sequencer_script.h"
 
 // Script library entry
 struct ScriptLibraryEntry {
@@ -71,10 +72,16 @@ public:
     
     // LFO access
     bool getLFOWaveformData(uint8_t slot, uint8_t* waveType, float* phase);
+    
+    // Sequencer access
+    bool getSequencerData(uint8_t slot, uint8_t* currentStep, int8_t stepValues[8]);
+    void setGlobalTempo(float bpm);  // Set tempo for all sequencers
+    void setSequencerStepValue(uint8_t slot, uint8_t step, int8_t value);
 
 private:
     ScriptInfo scripts[MAX_SCRIPTS];
     LFOScript* lfoInstances[MAX_SCRIPTS];  // LFO instance per slot
+    SequencerScript* sequencerInstances[MAX_SCRIPTS];  // Sequencer instance per slot
     
     // Script library
     static const ScriptLibraryEntry scriptLibrary[];

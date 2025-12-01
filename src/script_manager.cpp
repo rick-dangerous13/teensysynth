@@ -15,7 +15,7 @@
 // Script library definition
 const ScriptLibraryEntry ScriptManager::scriptLibrary[] = {
     {"LFO", "Low Frequency Oscillator", 0},
-    {"Sequencer", "Step Sequencer (Coming Soon)", 1},
+    {"8 Step Sequencer", "Musical Sequencer with CV/Gate", 1},
     {"Envelope", "ADSR Envelope (Coming Soon)", 2},
     {"Clock", "Clock Divider (Coming Soon)", 3}
 };
@@ -30,6 +30,7 @@ ScriptManager::ScriptManager() : lastUpdateTime(0) {
         strcpy(scripts[i].name, "empty");
         strcpy(scripts[i].output, "");
         lfoInstances[i] = nullptr;
+        sequencerInstances[i] = nullptr;
     }
 }
 
@@ -101,6 +102,13 @@ bool ScriptManager::unloadScript(uint8_t slot) {
         lfoInstances[slot]->stop();
         delete lfoInstances[slot];
         lfoInstances[slot] = nullptr;
+    }
+    
+    // Clean up sequencer instance if exists
+    if (sequencerInstances[slot] != nullptr) {
+        sequencerInstances[slot]->stop();
+        delete sequencerInstances[slot];
+        sequencerInstances[slot] = nullptr;
     }
     
     // Clear script data
@@ -205,16 +213,31 @@ const ScriptLibraryEntry* ScriptManager::getScriptLibraryEntry(uint8_t index) {
 }
 
 bool ScriptManager::loadScriptFromLibrary(uint8_t slot, uint8_t libraryIndex) {
+    Serial.print("loadScriptFromLibrary called: slot=");
+    Serial.print(slot);
+    Serial.print(", libraryIndex=");
+    Serial.println(libraryIndex);
+    
     if (slot >= MAX_SCRIPTS || libraryIndex >= scriptLibraryCount) {
+        Serial.println("ERROR: Invalid slot or library index");
+        Serial.print("  MAX_SCRIPTS=");
+        Serial.print(MAX_SCRIPTS);
+        Serial.print(", scriptLibraryCount=");
+        Serial.println(scriptLibraryCount);
         return false;
     }
     
     // Unload any existing script
     if (scripts[slot].state != ScriptState::EMPTY) {
+        Serial.println("Unloading existing script");
         unloadScript(slot);
     }
     
     const ScriptLibraryEntry* entry = &scriptLibrary[libraryIndex];
+    Serial.print("Entry name: ");
+    Serial.println(entry->name);
+    Serial.print("Entry scriptType: ");
+    Serial.println(entry->scriptType);
     
     // Load based on script type
     if (entry->scriptType == 0) {  // LFO
@@ -231,6 +254,32 @@ bool ScriptManager::loadScriptFromLibrary(uint8_t slot, uint8_t libraryIndex) {
         
         Serial.print("Loaded LFO in slot ");
         Serial.println(slot);
+        return true;
+    } else if (entry->scriptType == 1) {  // Sequencer
+        Serial.println("Creating sequencer instance...");
+        sequencerInstances[slot] = new SequencerScript();
+        if (!sequencerInstances[slot]->begin()) {
+            Serial.println("ERROR: Sequencer begin() failed");
+            delete sequencerInstances[slot];
+            sequencerInstances[slot] = nullptr;
+            return false;
+        }
+        Serial.println("Sequencer begin() successful");
+        
+        // Set default tempo (will be updated from UI global clock)
+        sequencerInstances[slot]->setGlobalTempo(DEFAULT_CLOCK_BPM);
+        Serial.print("Tempo set to ");
+        Serial.println(DEFAULT_CLOCK_BPM);
+        
+        strcpy(scripts[slot].name, entry->name);
+        strcpy(scripts[slot].path, "builtin://sequencer");
+        scripts[slot].state = ScriptState::RUNNING;
+        
+        Serial.print("Loaded Sequencer in slot ");
+        Serial.println(slot);
+        Serial.print("Script name: ");
+        Serial.println(scripts[slot].name);
+        Serial.print("Script state: RUNNING\n");
         return true;
     }
     
@@ -270,6 +319,15 @@ void ScriptManager::executeScriptFrame(uint8_t slot) {
         return;
     }
     
+    // Update sequencer if this slot has one
+    if (sequencerInstances[slot] != nullptr) {
+        sequencerInstances[slot]->update();
+        
+        // Update display output
+        sequencerInstances[slot]->getDisplayText(scripts[slot].output, sizeof(scripts[slot].output));
+        return;
+    }
+    
     // Other script types...
     unsigned long runtime = millis() - scripts[slot].lastUpdate;
     snprintf(scripts[slot].output, sizeof(scripts[slot].output),
@@ -284,4 +342,38 @@ bool ScriptManager::getLFOWaveformData(uint8_t slot, uint8_t* waveType, float* p
     if (waveType) *waveType = lfoInstances[slot]->getWaveform();
     if (phase) *phase = lfoInstances[slot]->getCurrentValue() * 2.0f * PI;
     return true;
+}
+
+bool ScriptManager::getSequencerData(uint8_t slot, uint8_t* currentStep, int8_t stepValues[8]) {
+    if (slot >= MAX_SCRIPTS) {
+        Serial.print("getSequencerData: Invalid slot ");
+        Serial.println(slot);
+        return false;
+    }
+    if (sequencerInstances[slot] == nullptr) {
+        // This is normal when LFO is running
+        return false;
+    }
+    
+    if (currentStep) *currentStep = sequencerInstances[slot]->getCurrentStep();
+    if (stepValues) {
+        for (int i = 0; i < 8; i++) {
+            stepValues[i] = sequencerInstances[slot]->getStepValue(i);
+        }
+    }
+    return true;
+}
+
+void ScriptManager::setGlobalTempo(float bpm) {
+    // Update tempo for all running sequencers
+    for (int i = 0; i < MAX_SCRIPTS; i++) {
+        if (sequencerInstances[i] != nullptr) {
+            sequencerInstances[i]->setGlobalTempo(bpm);
+        }
+    }
+}
+
+void ScriptManager::setSequencerStepValue(uint8_t slot, uint8_t step, int8_t value) {
+    if (slot >= MAX_SCRIPTS || sequencerInstances[slot] == nullptr) return;
+    sequencerInstances[slot]->setStepValue(step, value);
 }
