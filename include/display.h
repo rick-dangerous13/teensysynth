@@ -24,6 +24,7 @@ public:
     void drawTextCentered(int16_t y, const char* text, uint16_t color = COLOR_FG, uint8_t size = FONT_MEDIUM);
     
     // Primitive drawing
+    void drawPixel(int16_t x, int16_t y, uint16_t color);
     void drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color);
     void fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color);
     void drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color);

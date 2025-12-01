@@ -10,6 +10,14 @@
 
 #include <Arduino.h>
 #include "config.h"
+#include "lfo_script.h"
+
+// Script library entry
+struct ScriptLibraryEntry {
+    char name[32];
+    char description[64];
+    uint8_t scriptType;  // 0=LFO, 1=Sequencer, etc.
+};
 
 // Script state
 enum class ScriptState {
@@ -56,11 +64,21 @@ public:
     // Script communication
     void sendToScript(uint8_t slot, const char* message);
     
-    // List available scripts (would scan SD card in real implementation)
-    uint8_t listScripts(char scripts[][64], uint8_t maxScripts);
+    // Script library
+    uint8_t getScriptLibraryCount();
+    const ScriptLibraryEntry* getScriptLibraryEntry(uint8_t index);
+    bool loadScriptFromLibrary(uint8_t slot, uint8_t libraryIndex);
+    
+    // LFO access
+    bool getLFOWaveformData(uint8_t slot, uint8_t* waveType, float* phase);
 
 private:
     ScriptInfo scripts[MAX_SCRIPTS];
+    LFOScript* lfoInstances[MAX_SCRIPTS];  // LFO instance per slot
+    
+    // Script library
+    static const ScriptLibraryEntry scriptLibrary[];
+    static const uint8_t scriptLibraryCount;
     
     // Timing for script updates
     unsigned long lastUpdateTime;

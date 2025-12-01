@@ -12,6 +12,16 @@
 #include <string.h>
 #include <stdio.h>
 
+// Script library definition
+const ScriptLibraryEntry ScriptManager::scriptLibrary[] = {
+    {"LFO", "Low Frequency Oscillator", 0},
+    {"Sequencer", "Step Sequencer (Coming Soon)", 1},
+    {"Envelope", "ADSR Envelope (Coming Soon)", 2},
+    {"Clock", "Clock Divider (Coming Soon)", 3}
+};
+
+const uint8_t ScriptManager::scriptLibraryCount = sizeof(ScriptManager::scriptLibrary) / sizeof(ScriptLibraryEntry);
+
 ScriptManager::ScriptManager() : lastUpdateTime(0) {
     // Initialize all script slots
     for (int i = 0; i < MAX_SCRIPTS; i++) {
@@ -19,6 +29,7 @@ ScriptManager::ScriptManager() : lastUpdateTime(0) {
         scripts[i].state = ScriptState::EMPTY;
         strcpy(scripts[i].name, "empty");
         strcpy(scripts[i].output, "");
+        lfoInstances[i] = nullptr;
     }
 }
 
@@ -35,15 +46,7 @@ void ScriptManager::begin() {
 }
 
 void ScriptManager::update() {
-    unsigned long currentTime = millis();
-    
-    // Update at configured interval
-    if (currentTime - lastUpdateTime < SCRIPT_UPDATE_INTERVAL) {
-        return;
-    }
-    lastUpdateTime = currentTime;
-    
-    // Update each running script
+    // Update each running script (no throttling for LFO precision)
     for (int i = 0; i < MAX_SCRIPTS; i++) {
         if (scripts[i].state == ScriptState::RUNNING) {
             executeScriptFrame(i);
@@ -91,6 +94,13 @@ bool ScriptManager::unloadScript(uint8_t slot) {
     // Stop script if running
     if (scripts[slot].state == ScriptState::RUNNING) {
         stopScript(slot);
+    }
+    
+    // Clean up LFO instance if exists
+    if (lfoInstances[slot] != nullptr) {
+        lfoInstances[slot]->stop();
+        delete lfoInstances[slot];
+        lfoInstances[slot] = nullptr;
     }
     
     // Clear script data
@@ -185,25 +195,48 @@ void ScriptManager::sendToScript(uint8_t slot, const char* message) {
     Serial.println(message);
 }
 
-uint8_t ScriptManager::listScripts(char scripts_list[][64], uint8_t maxScripts) {
-    // Stub implementation - would scan SD card for .lua or .scd files
-    // Returns some demo scripts for now
-    
-    const char* demoScripts[] = {
-        "/scripts/awake.lua",
-        "/scripts/molly_the_poly.lua",
-        "/scripts/cheat_codes.lua",
-        "/scripts/mx.samples.lua"
-    };
-    
-    uint8_t count = 0;
-    for (uint8_t i = 0; i < 4 && i < maxScripts; i++) {
-        strncpy(scripts_list[i], demoScripts[i], 63);
-        scripts_list[i][63] = '\0';
-        count++;
+uint8_t ScriptManager::getScriptLibraryCount() {
+    return scriptLibraryCount;
+}
+
+const ScriptLibraryEntry* ScriptManager::getScriptLibraryEntry(uint8_t index) {
+    if (index >= scriptLibraryCount) return nullptr;
+    return &scriptLibrary[index];
+}
+
+bool ScriptManager::loadScriptFromLibrary(uint8_t slot, uint8_t libraryIndex) {
+    if (slot >= MAX_SCRIPTS || libraryIndex >= scriptLibraryCount) {
+        return false;
     }
     
-    return count;
+    // Unload any existing script
+    if (scripts[slot].state != ScriptState::EMPTY) {
+        unloadScript(slot);
+    }
+    
+    const ScriptLibraryEntry* entry = &scriptLibrary[libraryIndex];
+    
+    // Load based on script type
+    if (entry->scriptType == 0) {  // LFO
+        lfoInstances[slot] = new LFOScript();
+        if (!lfoInstances[slot]->begin()) {
+            delete lfoInstances[slot];
+            lfoInstances[slot] = nullptr;
+            return false;
+        }
+        
+        strcpy(scripts[slot].name, entry->name);
+        strcpy(scripts[slot].path, "builtin://lfo");
+        scripts[slot].state = ScriptState::RUNNING;
+        
+        Serial.print("Loaded LFO in slot ");
+        Serial.println(slot);
+        return true;
+    }
+    
+    // Other script types not yet implemented
+    strcpy(scripts[slot].output, "Coming soon");
+    return false;
 }
 
 bool ScriptManager::parseScriptHeader(uint8_t slot, const char* path) {
@@ -228,16 +261,27 @@ bool ScriptManager::parseScriptHeader(uint8_t slot, const char* path) {
 }
 
 void ScriptManager::executeScriptFrame(uint8_t slot) {
-    // Stub implementation - would execute one frame of the script
-    // In a full implementation, this would:
-    // - Run Lua/SuperCollider script cycle
-    // - Update audio output
-    // - Handle MIDI
-    // - Update display output
+    // Update LFO if this slot has one
+    if (lfoInstances[slot] != nullptr) {
+        lfoInstances[slot]->update();
+        
+        // Update display output
+        lfoInstances[slot]->getDisplayText(scripts[slot].output, sizeof(scripts[slot].output));
+        return;
+    }
     
+    // Other script types...
     unsigned long runtime = millis() - scripts[slot].lastUpdate;
-    
-    // Update output buffer with runtime info
     snprintf(scripts[slot].output, sizeof(scripts[slot].output),
              "Running: %lu.%lus", runtime / 1000, (runtime % 1000) / 100);
+}
+
+bool ScriptManager::getLFOWaveformData(uint8_t slot, uint8_t* waveType, float* phase) {
+    if (slot >= MAX_SCRIPTS || lfoInstances[slot] == nullptr) {
+        return false;
+    }
+    
+    if (waveType) *waveType = lfoInstances[slot]->getWaveform();
+    if (phase) *phase = lfoInstances[slot]->getCurrentValue() * 2.0f * PI;
+    return true;
 }

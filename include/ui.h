@@ -21,7 +21,10 @@ struct MenuItem {
 struct ScriptSlot {
     char name[32];
     char path[64];
+    char lastPath[64];  // Previous output for change detection
     bool active;
+    uint8_t waveType;  // 0=Sine, 1=Triangle, 2=Square, 3=Saw
+    float phase;       // Current phase for animation
 };
 
 class UI {
@@ -34,6 +37,7 @@ public:
     void showWelcomeScreen();
     void showMainMenu();
     void showScriptSelectScreen();
+    void showScriptLibraryScreen();  // Browse available scripts
     void showScriptRunningScreen();
     void showSettingsScreen();
     void showAboutScreen();
@@ -43,10 +47,14 @@ public:
     void resetMenuTracking();  // Call when switching screens
     int16_t getSelectedMenuItem();
     int16_t getSelectedSlot();
+    void setSelectedSlot(int16_t slot) { selectedScriptSlot = slot; }
     const char* getSelectedScriptPath();
     
     // Script display updates
     void updateScriptStatus(uint8_t slot, bool running);
+    void updateScriptInfo(uint8_t slot, const char* name);
+    void updateScriptOutput(uint8_t slot, const char* output);  // Update output text
+    void updateScriptWaveform(uint8_t slot, uint8_t waveType, float phase);  // Update waveform display
     void updateScriptDisplay(uint8_t slot, const char* output);
     
     // Settings control
@@ -60,6 +68,7 @@ private:
     int16_t lastMenuSelection;  // Track previous selection for partial updates
     int16_t menuItemCount;
     int16_t scrollOffset;
+    int16_t selectedScriptSlot;  // Which slot we're loading a script into
     
     // Available menu items
     static const int MAX_MENU_ITEMS = 10;

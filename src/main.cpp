@@ -35,6 +35,7 @@ enum class AppState {
     WELCOME,
     MAIN_MENU,
     SCRIPT_SELECT,
+    SCRIPT_LIBRARY,  // Browse available scripts
     SCRIPT_RUNNING,
     SETTINGS
 };
@@ -47,6 +48,7 @@ const unsigned long WELCOME_DURATION = 2000; // 2 seconds
 void handleWelcomeState();
 void handleMainMenuState();
 void handleScriptSelectState();
+void handleScriptLibraryState();
 void handleScriptRunningState();
 void handleSettingsState();
 
@@ -86,6 +88,10 @@ void loop() {
             
         case AppState::SCRIPT_SELECT:
             handleScriptSelectState();
+            break;
+        
+        case AppState::SCRIPT_LIBRARY:
+            handleScriptLibraryState();
             break;
             
         case AppState::SCRIPT_RUNNING:
@@ -145,6 +151,27 @@ void handleMainMenuState() {
 }
 
 void handleScriptSelectState() {
+    static unsigned long lastRefresh = 0;
+    
+    // Update script outputs periodically
+    if (millis() - lastRefresh > 50) {  // Refresh every 50ms for smooth animation
+        for (int i = 0; i < MAX_SCRIPTS; i++) {
+            if (scriptManager.isScriptRunning(i)) {
+                const char* output = scriptManager.getScriptOutput(i);
+                ui.updateScriptOutput(i, output);
+                
+                // Update waveform data if it's an LFO
+                uint8_t waveType;
+                float phase;
+                if (scriptManager.getLFOWaveformData(i, &waveType, &phase)) {
+                    ui.updateScriptWaveform(i, waveType, phase);
+                }
+            }
+        }
+        lastRefresh = millis();
+        ui.showScriptSelectScreen();  // Refresh display
+    }
+    
     // Handle scrolling
     int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
@@ -152,13 +179,13 @@ void handleScriptSelectState() {
         ui.showScriptSelectScreen();  // Partial redraw
     }
     
-    // Handle OK button - load script
+    // Handle OK button - go to script library browser
     if (input.isButtonPressed(BTN_OK)) {
         int slot = ui.getSelectedSlot();
-        if (slot >= 0 && slot < MAX_SCRIPTS) {
-            scriptManager.loadScript(slot, ui.getSelectedScriptPath());
-            ui.updateScriptStatus(slot, true);
-        }
+        ui.setSelectedSlot(slot);
+        currentState = AppState::SCRIPT_LIBRARY;
+        ui.resetMenuTracking();
+        ui.showScriptLibraryScreen();
     }
     
     // Handle Back button
@@ -168,6 +195,40 @@ void handleScriptSelectState() {
         ui.showMainMenu();
     }
 }
+
+void handleScriptLibraryState() {
+    // Handle scrolling through available scripts
+    int scrollDelta = input.getEncoderDelta();
+    if (scrollDelta != 0) {
+        ui.scrollMenu(scrollDelta);
+        ui.showScriptLibraryScreen();  // Partial redraw
+    }
+    
+    // Handle OK button - load selected script
+    if (input.isButtonPressed(BTN_OK)) {
+        int slot = ui.getSelectedSlot();
+        int libraryIndex = ui.getSelectedMenuItem();
+        
+        if (scriptManager.loadScriptFromLibrary(slot, libraryIndex)) {
+            ui.updateScriptStatus(slot, true);
+            // Update script info in UI
+            const char* scriptName = scriptManager.getScriptName(slot);
+            ui.updateScriptInfo(slot, scriptName);
+            // Go back to script select screen
+            currentState = AppState::SCRIPT_SELECT;
+            ui.resetMenuTracking();
+            ui.showScriptSelectScreen();
+        }
+    }
+    
+    // Handle Back button - cancel and go back
+    if (input.isButtonPressed(BTN_BACK)) {
+        currentState = AppState::SCRIPT_SELECT;
+        ui.resetMenuTracking();
+        ui.showScriptSelectScreen();
+    }
+}
+
 
 void handleScriptRunningState() {
     // Update script displays

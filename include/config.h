@@ -59,6 +59,15 @@
 #define ENC_DEBOUNCE_MS      2    // Debounce time for encoder transitions
 
 // ============================================================================
+// MCP4725 DAC Configuration (Eurorack CV Output)
+// ============================================================================
+#define MCP4725_ADDR  0x60  // Default I2C address
+// Teensy 4.1 I2C pins (Wire): SDA=18 (SDA), SCL=19 (SCL)
+// Connect: VCC->3.3V, GND->GND, SDA->18, SCL->19
+#define DAC_MAX_VALUE 4095  // 12-bit DAC (0-4095)
+#define DAC_MAX_VOLTAGE 5.0 // Maximum output voltage
+
+// ============================================================================
 // Script Manager Configuration
 // ============================================================================
 #define MAX_SCRIPTS   4    // Maximum concurrent scripts
