@@ -5,6 +5,7 @@
  */
 
 #include "display.h"
+#include <string.h>
 
 Display::Display() 
     : tft(TFT_CS, TFT_DC, TFT_RST, TFT_MOSI, TFT_SCLK, TFT_MISO),
@@ -14,7 +15,7 @@ Display::Display()
 
 void Display::begin() {
     tft.begin();
-    tft.setRotation(1);  // Landscape mode
+    tft.setRotation(3);  // Landscape mode (flipped)
     clear();
 }
 
@@ -35,11 +36,10 @@ void Display::drawText(int16_t x, int16_t y, const char* text, uint16_t color, u
 }
 
 void Display::drawTextCentered(int16_t y, const char* text, uint16_t color, uint8_t size) {
-    tft.setTextSize(size);
-    int16_t x1, y1;
-    uint16_t w, h;
-    tft.getTextBounds(text, 0, 0, &x1, &y1, &w, &h);
-    int16_t x = (SCREEN_WIDTH - w) / 2;
+    // Calculate text width manually (ILI9341_t3 uses 6x8 font)
+    int16_t charWidth = 6 * size;
+    int16_t textWidth = strlen(text) * charWidth;
+    int16_t x = (SCREEN_WIDTH - textWidth) / 2;
     drawText(x, y, text, color, size);
 }
 
@@ -92,7 +92,6 @@ void Display::drawWaveform(int16_t x, int16_t y, int16_t w, int16_t h, const int
     if (len < 2 || data == nullptr) return;
     
     int16_t centerY = y + h / 2;
-    int16_t stepX = w / (len - 1);
     
     for (int16_t i = 0; i < len - 1; i++) {
         int16_t x0 = x + (i * w) / (len - 1);
@@ -158,6 +157,9 @@ void Display::clearClipRegion() {
 }
 
 void Display::getTextBounds(const char* text, int16_t x, int16_t y, int16_t* x1, int16_t* y1, uint16_t* w, uint16_t* h, uint8_t size) {
-    tft.setTextSize(size);
-    tft.getTextBounds(text, x, y, x1, y1, w, h);
+    // Manual text bounds calculation for ILI9341_t3 (uses 6x8 font)
+    *x1 = x;
+    *y1 = y;
+    *w = strlen(text) * 6 * size;
+    *h = 8 * size;
 }

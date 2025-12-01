@@ -55,8 +55,8 @@
 #define ENC_SW        6    // Encoder switch (push button) pin
 
 // Encoder settings
-#define ENC_STEPS_PER_NOTCH  4    // Pulses per detent/click
-#define ENC_DEBOUNCE_MS      5    // Debounce time for encoder transitions
+#define ENC_STEPS_PER_NOTCH  1    // State transitions per detent (DEBO encoder = 1)
+#define ENC_DEBOUNCE_MS      2    // Debounce time for encoder transitions
 
 // ============================================================================
 // Script Manager Configuration
@@ -90,7 +90,7 @@
 
 // Update intervals (milliseconds)
 #define INPUT_UPDATE_INTERVAL   10
-#define DISPLAY_UPDATE_INTERVAL 50
+#define DISPLAY_UPDATE_INTERVAL 16
 #define SCRIPT_UPDATE_INTERVAL  10
 
 #endif // CONFIG_H

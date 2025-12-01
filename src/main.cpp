@@ -120,6 +120,7 @@ void handleMainMenuState() {
     int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
         ui.scrollMenu(scrollDelta);
+        ui.showMainMenu();  // Redraw the menu
     }
     
     // Handle button presses
@@ -146,6 +147,7 @@ void handleScriptSelectState() {
     int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
         ui.scrollMenu(scrollDelta);
+        ui.showScriptSelectScreen();  // Redraw
     }
     
     // Handle OK button - load script
@@ -184,6 +186,7 @@ void handleSettingsState() {
     int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
         ui.scrollMenu(scrollDelta);
+        ui.showSettingsScreen();  // Redraw
     }
     
     // Handle OK button

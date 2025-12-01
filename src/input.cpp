@@ -19,9 +19,11 @@ InputHandler::InputHandler() {
     // Initialize encoder states
     encoderPosition = 0;
     lastEncoderPosition = 0;
-    lastEncoderCLK = HIGH;
-    lastEncoderDT = HIGH;
+    accumulatedDelta = 0;
+    lastEncoderCLK = 0;
+    lastEncoderDT = 0;
     lastEncoderTime = 0;
+    lastStepTime = 0;
     
     // Initialize encoder switch states
     encoderSwitchState = false;
@@ -41,9 +43,12 @@ void InputHandler::begin() {
     pinMode(ENC_DT, INPUT_PULLUP);
     pinMode(ENC_SW, INPUT_PULLUP);
     
-    // Read initial encoder pin states
-    lastEncoderCLK = digitalRead(ENC_CLK);
-    lastEncoderDT = digitalRead(ENC_DT);
+    // Read initial encoder state (2-bit value from both pins)
+    uint8_t s = 0;
+    if (digitalRead(ENC_CLK)) s |= 1;
+    if (digitalRead(ENC_DT)) s |= 2;
+    lastEncoderCLK = s;
+    lastEncoderDT = 0;  // Use this for previous state
 }
 
 void InputHandler::update() {
@@ -91,33 +96,40 @@ void InputHandler::updateButton(uint8_t index, uint8_t pin) {
 }
 
 void InputHandler::updateEncoder() {
-    // Read current encoder pin states
-    uint8_t currentCLK = digitalRead(ENC_CLK);
-    uint8_t currentDT = digitalRead(ENC_DT);
+    // Proper quadrature decoding using state machine
+    // Based on Paul Stoffregen's Encoder library
     
-    // Detect state changes with debouncing
-    unsigned long currentTime = millis();
-    if (currentTime - lastEncoderTime < ENC_DEBOUNCE_MS) {
-        return;  // Too soon, ignore
-    }
+    // Read current pin states and build 4-bit state value
+    uint8_t s = lastEncoderCLK & 3;  // Keep old state in lower 2 bits
+    if (digitalRead(ENC_CLK)) s |= 4;  // Add new CLK to bit 2
+    if (digitalRead(ENC_DT)) s |= 8;   // Add new DT to bit 3
     
-    // Check if CLK pin changed (falling edge)
-    if (currentCLK != lastEncoderCLK && currentCLK == LOW) {
-        // CLK went from HIGH to LOW
-        // Check DT to determine direction
-        if (currentDT == HIGH) {
-            // Clockwise rotation
+    // State transition lookup - only update on valid transitions
+    // This state machine approach filters noise and bouncing
+    switch (s) {
+        case 0: case 5: case 10: case 15:
+            // No movement
+            break;
+        case 1: case 7: case 8: case 14:
+            // Clockwise
             encoderPosition++;
-        } else {
-            // Counter-clockwise rotation
+            break;
+        case 2: case 4: case 11: case 13:
+            // Counter-clockwise
             encoderPosition--;
-        }
-        lastEncoderTime = currentTime;
+            break;
+        case 3: case 12:
+            // Double step clockwise (should not happen with good encoder)
+            encoderPosition += 2;
+            break;
+        case 6: case 9:
+            // Double step counter-clockwise
+            encoderPosition -= 2;
+            break;
     }
     
-    // Save current states
-    lastEncoderCLK = currentCLK;
-    lastEncoderDT = currentDT;
+    // Store new state in lower 2 bits for next comparison
+    lastEncoderCLK = (s >> 2);
 }
 
 void InputHandler::updateEncoderSwitch() {
@@ -149,6 +161,12 @@ void InputHandler::updateEncoderSwitch() {
 bool InputHandler::isButtonPressed(uint8_t button) {
     uint8_t index = getButtonIndex(button);
     if (index >= 2) return false;
+    
+    // Allow encoder button to also act as OK button
+    if (button == BTN_OK) {
+        return buttonPressed[index] || encoderSwitchPressed;
+    }
+    
     return buttonPressed[index];
 }
 
@@ -167,13 +185,19 @@ bool InputHandler::isButtonReleased(uint8_t button) {
 int16_t InputHandler::getEncoderDelta() {
     // Calculate encoder delta since last call
     int16_t delta = encoderPosition - lastEncoderPosition;
-    lastEncoderPosition = encoderPosition;
     
-    // Normalize to menu steps (divide by pulses per notch/detent)
-    // This gives us smoother control - one menu step per physical click
-    if (abs(delta) >= ENC_STEPS_PER_NOTCH) {
-        int16_t steps = delta / ENC_STEPS_PER_NOTCH;
-        return steps;
+    if (delta != 0) {
+        // Accumulate changes
+        accumulatedDelta += delta;
+        lastEncoderPosition = encoderPosition;
+        
+        // Only return steps when we have accumulated enough for a full detent
+        // DEBO encoder typically needs 4 state transitions per detent
+        if (abs(accumulatedDelta) >= 4) {
+            int16_t steps = accumulatedDelta / 4;
+            accumulatedDelta = accumulatedDelta % 4;  // Keep remainder
+            return steps;
+        }
     }
     
     return 0;

@@ -45,9 +45,11 @@ private:
     // Encoder rotation state
     volatile int16_t encoderPosition;
     int16_t lastEncoderPosition;
+    int16_t accumulatedDelta;      // Accumulate small movements
     uint8_t lastEncoderCLK;
     uint8_t lastEncoderDT;
     unsigned long lastEncoderTime;
+    unsigned long lastStepTime;    // Track time of last menu step
     
     // Helper methods
     uint8_t getButtonIndex(uint8_t button);
