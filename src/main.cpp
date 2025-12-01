@@ -120,7 +120,7 @@ void handleMainMenuState() {
     int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
         ui.scrollMenu(scrollDelta);
-        ui.showMainMenu();  // Redraw the menu
+        ui.showMainMenu();  // Partial redraw of changed items
     }
     
     // Handle button presses
@@ -129,10 +129,12 @@ void handleMainMenuState() {
         switch (selection) {
             case 0: // Scripts
                 currentState = AppState::SCRIPT_SELECT;
+                ui.resetMenuTracking();  // Reset for new screen
                 ui.showScriptSelectScreen();
                 break;
             case 1: // Settings
                 currentState = AppState::SETTINGS;
+                ui.resetMenuTracking();  // Reset for new screen
                 ui.showSettingsScreen();
                 break;
             case 2: // About
@@ -147,7 +149,7 @@ void handleScriptSelectState() {
     int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
         ui.scrollMenu(scrollDelta);
-        ui.showScriptSelectScreen();  // Redraw
+        ui.showScriptSelectScreen();  // Partial redraw
     }
     
     // Handle OK button - load script
@@ -162,6 +164,7 @@ void handleScriptSelectState() {
     // Handle Back button
     if (input.isButtonPressed(BTN_BACK)) {
         currentState = AppState::MAIN_MENU;
+        ui.resetMenuTracking();  // Reset for new screen
         ui.showMainMenu();
     }
 }
@@ -177,6 +180,7 @@ void handleScriptRunningState() {
     // Handle Back button
     if (input.isButtonPressed(BTN_BACK)) {
         currentState = AppState::MAIN_MENU;
+        ui.resetMenuTracking();  // Reset for new screen
         ui.showMainMenu();
     }
 }
@@ -186,7 +190,7 @@ void handleSettingsState() {
     int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
         ui.scrollMenu(scrollDelta);
-        ui.showSettingsScreen();  // Redraw
+        ui.showSettingsScreen();  // Partial redraw
     }
     
     // Handle OK button
@@ -197,6 +201,7 @@ void handleSettingsState() {
     // Handle Back button
     if (input.isButtonPressed(BTN_BACK)) {
         currentState = AppState::MAIN_MENU;
+        ui.resetMenuTracking();  // Reset for new screen
         ui.showMainMenu();
     }
 }

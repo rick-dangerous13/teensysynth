@@ -40,6 +40,7 @@ public:
     
     // Menu navigation
     void scrollMenu(int16_t delta);
+    void resetMenuTracking();  // Call when switching screens
     int16_t getSelectedMenuItem();
     int16_t getSelectedSlot();
     const char* getSelectedScriptPath();
@@ -56,6 +57,7 @@ private:
     
     // Menu state
     int16_t menuSelection;
+    int16_t lastMenuSelection;  // Track previous selection for partial updates
     int16_t menuItemCount;
     int16_t scrollOffset;
     

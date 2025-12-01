@@ -8,7 +8,7 @@
 #include <string.h>
 #include <stdio.h>
 
-UI::UI() : display(nullptr), menuSelection(0), menuItemCount(0), scrollOffset(0) {
+UI::UI() : display(nullptr), menuSelection(0), lastMenuSelection(-1), menuItemCount(0), scrollOffset(0) {
     // Initialize script slots
     for (int i = 0; i < MAX_SCRIPTS; i++) {
         strcpy(scriptSlots[i].name, "empty");
@@ -52,8 +52,6 @@ void UI::showWelcomeScreen() {
 void UI::showMainMenu() {
     if (!display) return;
     
-    display->clear();
-    
     // Set up menu items
     menuItems[0].label = "SCRIPTS";
     menuItems[0].enabled = true;
@@ -63,39 +61,52 @@ void UI::showMainMenu() {
     menuItems[2].enabled = true;
     menuItemCount = 3;
     
-    // Draw header
-    drawHeader("TEENSYSYNTH");
-    
-    // Draw menu items
-    int16_t startY = 50;
-    for (int i = 0; i < menuItemCount; i++) {
-        drawMenuItem(startY + i * MENU_ITEM_H, menuItems[i].label, i == menuSelection);
+    // Only do full redraw if this is initial display
+    if (lastMenuSelection == -1) {
+        display->clear();
+        drawHeader("TEENSYSYNTH");
+        drawFooter("OK: select", "");
+        
+        // Draw all menu items
+        int16_t startY = 50;
+        for (int i = 0; i < menuItemCount; i++) {
+            drawMenuItem(startY + i * MENU_ITEM_H, menuItems[i].label, i == menuSelection);
+        }
+        display->drawScrollIndicator(50, menuItemCount, 6, menuSelection);
+    } else if (lastMenuSelection != menuSelection) {
+        // Only redraw the changed menu items
+        int16_t startY = 50;
+        drawMenuItem(startY + lastMenuSelection * MENU_ITEM_H, menuItems[lastMenuSelection].label, false);
+        drawMenuItem(startY + menuSelection * MENU_ITEM_H, menuItems[menuSelection].label, true);
+        display->drawScrollIndicator(50, menuItemCount, 6, menuSelection);
     }
     
-    // Draw footer with button hints
-    drawFooter("OK: select", "");
-    
-    // Draw scroll indicator if needed
-    display->drawScrollIndicator(50, menuItemCount, 6, menuSelection);
+    lastMenuSelection = menuSelection;
 }
 
 void UI::showScriptSelectScreen() {
     if (!display) return;
     
-    display->clear();
+    menuItemCount = MAX_SCRIPTS;  // 4 script slots
     
-    // Draw header
-    drawHeader("SCRIPTS");
-    
-    // Draw 4 script slots in a 2x2 grid layout
-    display->drawQuadrantDividers();
-    
-    for (uint8_t i = 0; i < MAX_SCRIPTS; i++) {
-        drawScriptSlot(i, i == menuSelection);
+    // Only do full redraw if this is initial display
+    if (lastMenuSelection == -1) {
+        display->clear();
+        drawHeader("SCRIPTS");
+        display->drawQuadrantDividers();
+        drawFooter("OK: load", "BACK: menu");
+        
+        // Draw all script slots
+        for (uint8_t i = 0; i < MAX_SCRIPTS; i++) {
+            drawScriptSlot(i, i == menuSelection);
+        }
+    } else if (lastMenuSelection != menuSelection) {
+        // Only redraw the changed slots
+        drawScriptSlot(lastMenuSelection, false);
+        drawScriptSlot(menuSelection, true);
     }
     
-    // Draw footer with button hints
-    drawFooter("OK: load", "BACK: menu");
+    lastMenuSelection = menuSelection;
 }
 
 void UI::showScriptRunningScreen() {
@@ -126,11 +137,6 @@ void UI::showScriptRunningScreen() {
 void UI::showSettingsScreen() {
     if (!display) return;
     
-    display->clear();
-    
-    // Draw header
-    drawHeader("SETTINGS");
-    
     // Setting items
     const char* settings[] = {
         "Audio Output",
@@ -141,13 +147,25 @@ void UI::showSettingsScreen() {
     
     menuItemCount = 4;
     
-    int16_t startY = 50;
-    for (int i = 0; i < menuItemCount; i++) {
-        drawMenuItem(startY + i * MENU_ITEM_H, settings[i], i == menuSelection);
+    // Only do full redraw if this is initial display
+    if (lastMenuSelection == -1) {
+        display->clear();
+        drawHeader("SETTINGS");
+        drawFooter("OK: edit", "BACK: menu");
+        
+        // Draw all menu items
+        int16_t startY = 50;
+        for (int i = 0; i < menuItemCount; i++) {
+            drawMenuItem(startY + i * MENU_ITEM_H, settings[i], i == menuSelection);
+        }
+    } else if (lastMenuSelection != menuSelection) {
+        // Only redraw the changed menu items
+        int16_t startY = 50;
+        drawMenuItem(startY + lastMenuSelection * MENU_ITEM_H, settings[lastMenuSelection], false);
+        drawMenuItem(startY + menuSelection * MENU_ITEM_H, settings[menuSelection], true);
     }
     
-    // Draw footer
-    drawFooter("OK: edit", "BACK: menu");
+    lastMenuSelection = menuSelection;
 }
 
 void UI::showAboutScreen() {
@@ -183,6 +201,11 @@ void UI::scrollMenu(int16_t delta) {
     if (menuSelection >= menuItemCount) {
         menuSelection = 0;
     }
+}
+
+void UI::resetMenuTracking() {
+    lastMenuSelection = -1;  // Force full redraw on next show
+    menuSelection = 0;       // Reset to first item
 }
 
 int16_t UI::getSelectedMenuItem() {
@@ -241,6 +264,10 @@ void UI::drawMenuItem(int16_t y, const char* label, bool selected) {
         display->drawText(MARGIN + 5, y, ">", COLOR_BG, FONT_MEDIUM);
         display->drawText(MARGIN + 15, y, label, COLOR_BG, FONT_MEDIUM);
     } else {
+        // Clear the highlight area first
+        display->fillRect(MARGIN, y - 2, SCREEN_WIDTH - 2 * MARGIN - 10, MENU_ITEM_H, COLOR_BG);
+        
+        // Draw unselected label
         display->drawText(MARGIN + 15, y, label, COLOR_DIM, FONT_MEDIUM);
     }
 }
@@ -253,6 +280,9 @@ void UI::drawScriptSlot(uint8_t slot, bool selected) {
     int16_t y = (slot / 2) * (SCREEN_HEIGHT / 2);
     int16_t w = SCREEN_WIDTH / 2 - 2;
     int16_t h = SCREEN_HEIGHT / 2 - 2;
+    
+    // Clear the slot area first (including any old selection border)
+    display->fillRect(x + 2, y + 2, w - 2, h - 2, COLOR_BG);
     
     // Draw slot background
     if (selected) {
