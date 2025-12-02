@@ -1,5 +1,5 @@
 /**
- * TeensySynth - Eurorack Synthesizer Firmware
+ * Polyphonion - Eurorack Synthesizer Firmware
  * 
  * A Teensy 4.1-based synthesizer in Doepfer Eurorack format with
  * Norns Shield-style graphical GUI. Supports multitasking with
@@ -11,7 +11,7 @@
  * - 2 buttons: OK (pin 2), Back (pin 3)
  * - Rotary encoder for scrolling (CLK: pin 4, DT: pin 5, SW: pin 6)
  * 
- * Author: TeensySynth Team
+ * Author: Polyphonion Team
  * License: MIT
  */
 
@@ -56,7 +56,7 @@ void setup() {
     // Initialize serial for debugging
     Serial.begin(115200);
     delay(100);
-    Serial.println("TeensySynth Initializing...");
+    Serial.println("Polyphonion Initializing...");
     
     // Initialize hardware
     display.begin();
@@ -69,7 +69,7 @@ void setup() {
     welcomeStartTime = millis();
     ui.showWelcomeScreen();
     
-    Serial.println("TeensySynth Ready!");
+    Serial.println("Polyphonion Ready!");
 }
 
 void loop() {
@@ -134,9 +134,10 @@ void handleMainMenuState() {
         int selection = ui.getSelectedMenuItem();
         switch (selection) {
             case 0: // Scripts
-                currentState = AppState::SCRIPT_SELECT;
+                currentState = AppState::SCRIPT_LIBRARY;
                 ui.resetMenuTracking();  // Reset for new screen
-                ui.showScriptSelectScreen();
+                ui.setMenuItemCount(scriptManager.getScriptLibraryCount());
+                ui.showScriptLibraryScreen();
                 break;
             case 1: // Settings
                 currentState = AppState::SETTINGS;
@@ -174,6 +175,15 @@ void handleScriptSelectState() {
                 if (scriptManager.getSequencerData(i, &currentStep, stepValues, stepDurations)) {
                     ui.updateScriptSequencer(i, currentStep, stepValues, stepDurations);
                 }
+                
+                // Update steampunk sequencer data if it's a steampunk sequencer
+                uint8_t currentBeat;
+                uint8_t gateModes[8];
+                uint8_t direction;
+                bool steamTrigger;
+                if (scriptManager.getSteampunkSequencerData(i, &currentStep, &currentBeat, stepValues, stepDurations, gateModes, &direction, &steamTrigger)) {
+                    ui.updateSteampunkSequencer(i, currentStep, currentBeat, stepValues, stepDurations, gateModes, direction, steamTrigger);
+                }
             }
         }
         lastRefresh = millis();
@@ -183,12 +193,37 @@ void handleScriptSelectState() {
     // Handle encoder input
     int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
-        // If slot 0 is active and is a sequencer, adjust step value or duration
+        // If slot 0 is active, adjust parameters based on script type
         if (scriptManager.isScriptRunning(0)) {
             uint8_t dummy;
             int8_t dummySteps[8];
             uint8_t dummyDurations[8];
-            if (scriptManager.getSequencerData(0, &dummy, dummySteps, dummyDurations)) {
+            uint8_t dummyGateModes[8];
+            uint8_t dummyDirection;
+            bool dummySteam;
+            
+            // Try LFO first
+            uint8_t waveType;
+            float phase;
+            if (scriptManager.getLFOWaveformData(0, &waveType, &phase)) {
+                uint8_t editParam = ui.getLFOEditParam(0);
+                
+                if (editParam == 0) {
+                    // Waveform editing
+                    ui.adjustLFOWaveform(0, scrollDelta);
+                    scriptManager.setLFOWaveform(0, ui.getLFOWaveType(0));
+                } else if (editParam == 1) {
+                    // Frequency editing
+                    ui.adjustLFOFrequency(0, scrollDelta);
+                    scriptManager.setLFOFrequency(0, ui.getLFOFrequency(0));
+                } else if (editParam == 2) {
+                    // Level editing
+                    ui.adjustLFOLevel(0, scrollDelta);
+                    scriptManager.setLFOLevel(0, ui.getLFOLevel(0));
+                }
+            }
+            // Try regular sequencer
+            else if (scriptManager.getSequencerData(0, &dummy, dummySteps, dummyDurations)) {
                 uint8_t editStep = ui.getSequencerEditStep(0);
                 if (ui.isEditingDuration(0)) {
                     // Editing duration - adjust dial value
@@ -199,18 +234,62 @@ void handleScriptSelectState() {
                     ui.adjustSequencerStepValue(0, scrollDelta);
                     scriptManager.setSequencerStepValue(0, editStep, dummySteps[editStep] + scrollDelta);
                 }
+            } 
+            // Try steampunk sequencer
+            else if (scriptManager.getSteampunkSequencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam)) {
+                uint8_t editStep = ui.getSequencerEditStep(0);
+                uint8_t editMode = ui.getSequencerEditMode(0);
+                
+                if (editMode == 0) {
+                    // Mode 0: Editing pitch - adjust lever value
+                    ui.adjustSequencerStepValue(0, scrollDelta);
+                    scriptManager.setSteampunkStepValue(0, editStep, dummySteps[editStep] + scrollDelta);
+                } else if (editMode == 1) {
+                    // Mode 1: Editing gate mode - cycle through switch positions
+                    // Get current data first
+                    scriptManager.getSteampunkSequencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam);
+                    // Calculate new gate mode
+                    int8_t newMode = (int8_t)dummyGateModes[editStep] + scrollDelta;
+                    if (newMode < 0) newMode = 2;
+                    if (newMode > 2) newMode = 0;
+                    // Update UI and script manager
+                    ui.adjustStepGateMode(0, scrollDelta);
+                    scriptManager.setSteampunkStepGateMode(0, editStep, (uint8_t)newMode);
+                } else if (editMode == 2) {
+                    // Mode 2: Editing duration - adjust crank value
+                    ui.adjustSequencerStepDuration(0, scrollDelta);
+                    scriptManager.setSteampunkStepDuration(0, editStep, dummyDurations[editStep] + scrollDelta);
+                }
             }
         }
     }
     
-    // Handle OK button - toggle pitch/duration or advance step, or go to library
+    // Handle OK button - cycle edit parameter for LFO, advance step for sequencer, or go to library
     if (input.isButtonPressed(BTN_OK)) {
         if (scriptManager.isScriptRunning(0)) {
             uint8_t dummy;
             int8_t dummySteps[8];
             uint8_t dummyDurations[8];
-            if (scriptManager.getSequencerData(0, &dummy, dummySteps, dummyDurations)) {
-                // Sequencer is running - advance edit step (bar1 -> dial1 -> bar2 -> dial2 ...)
+            uint8_t dummyGateModes[8];
+            uint8_t dummyDirection;
+            bool dummySteam;
+            
+            // LFO: cycle edit parameter
+            uint8_t waveType;
+            float phase;
+            if (scriptManager.getLFOWaveformData(0, &waveType, &phase)) {
+                ui.advanceLFOEditParam(0);
+                ui.showScriptSelectScreen();
+                return;
+            }
+            // Regular sequencer: advance edit step
+            else if (scriptManager.getSequencerData(0, &dummy, dummySteps, dummyDurations)) {
+                ui.advanceSequencerEditStep(0);
+                ui.showScriptSelectScreen();
+                return;
+            }
+            // Steampunk sequencer: advance edit step (lever1 -> crank1 -> lever2 -> crank2 ...)
+            else if (scriptManager.getSteampunkSequencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam)) {
                 ui.advanceSequencerEditStep(0);
                 ui.showScriptSelectScreen();
                 return;
@@ -222,14 +301,17 @@ void handleScriptSelectState() {
         ui.setSelectedSlot(slot);
         currentState = AppState::SCRIPT_LIBRARY;
         ui.resetMenuTracking();
+        ui.setMenuItemCount(scriptManager.getScriptLibraryCount());
         ui.showScriptLibraryScreen();
     }
     
     // Handle Back button
     if (input.isButtonPressed(BTN_BACK)) {
-        currentState = AppState::MAIN_MENU;
-        ui.resetMenuTracking();  // Reset for new screen
-        ui.showMainMenu();
+        // Go to script library to change script
+        currentState = AppState::SCRIPT_LIBRARY;
+        ui.resetMenuTracking();
+        ui.setMenuItemCount(scriptManager.getScriptLibraryCount());
+        ui.showScriptLibraryScreen();
     }
 }
 
@@ -269,6 +351,13 @@ void handleScriptLibraryState() {
                 int8_t defaultSteps[8] = {0, 2, 4, 5, 7, 9, 11, 12}; // Ascending scale
                 uint8_t defaultDurations[8] = {1, 1, 1, 1, 1, 1, 1, 1}; // 1 beat each
                 ui.updateScriptSequencer(slot, 0, defaultSteps, defaultDurations);
+            }
+            // Initialize steampunk sequencer data if it's a steampunk sequencer
+            else if (libraryIndex == 2) {
+                int8_t defaultSteps[8] = {0, 4, 7, 12, 10, 7, 5, 2}; // Interesting melodic pattern
+                uint8_t defaultDurations[8] = {1, 1, 1, 1, 1, 1, 1, 1}; // 1 beat each
+                uint8_t defaultGateModes[8] = {0, 0, 0, 2, 0, 1, 0, 0}; // Normal, normal, normal, slide, normal, skip, normal, normal
+                ui.updateSteampunkSequencer(slot, 0, 0, defaultSteps, defaultDurations, defaultGateModes, 0, false);
                 Serial.println("Sequencer data initialized");
             }
             
@@ -283,9 +372,17 @@ void handleScriptLibraryState() {
     
     // Handle Back button - cancel and go back
     if (input.isButtonPressed(BTN_BACK)) {
-        currentState = AppState::SCRIPT_SELECT;
-        ui.resetMenuTracking();
-        ui.showScriptSelectScreen();
+        if (scriptManager.isScriptRunning(0)) {
+            // If script running, go back to viewing it
+            currentState = AppState::SCRIPT_SELECT;
+            ui.resetMenuTracking();
+            ui.showScriptSelectScreen();
+        } else {
+            // No script running, go back to main menu
+            currentState = AppState::MAIN_MENU;
+            ui.resetMenuTracking();
+            ui.showMainMenu();
+        }
     }
 }
 

@@ -1,5 +1,5 @@
 /**
- * TeensySynth Configuration
+ * Polyphonion Configuration
  * 
  * Hardware pin definitions and system constants
  */

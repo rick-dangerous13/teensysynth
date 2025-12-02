@@ -1,4 +1,4 @@
-# TeensySynth
+# Polyphonion
 
 A Teensy 4.1-based synthesizer in Doepfer Eurorack format with a Norns Shield-style graphical GUI.
 

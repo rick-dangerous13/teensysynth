@@ -1,4 +1,4 @@
-# TeensySynth Hardware Wiring Guide
+# Polyphonion Hardware Wiring Guide
 
 ## Pin Assignment Summary
 
@@ -159,13 +159,13 @@ Both MCP4725 DACs share the same I2C bus (SDA=18, SCL=19) but use different addr
 
 At startup, you should see:
 ```
-TeensySynth Initializing...
+Polyphonion Initializing...
 LFO: Initialized successfully with MCP4725 DAC
      CV output available on VOUT pin (connect to TRRS jack)
 SEQ: CV DAC initialized
 SEQ: Gate DAC initialized
 ScriptManager: Initialized
-TeensySynth Ready!
+Polyphonion Ready!
 ```
 
 If DACs are not detected, check wiring and addresses.

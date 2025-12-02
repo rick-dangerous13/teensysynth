@@ -16,8 +16,9 @@
 const ScriptLibraryEntry ScriptManager::scriptLibrary[] = {
     {"LFO", "Low Frequency Oscillator", 0},
     {"8 Step Sequencer", "Musical Sequencer with CV/Gate", 1},
-    {"Envelope", "ADSR Envelope (Coming Soon)", 2},
-    {"Clock", "Clock Divider (Coming Soon)", 3}
+    {"SteampunQuencer", "Metropolix-style Victorian Sequencer", 2},
+    {"Envelope", "ADSR Envelope (Coming Soon)", 3},
+    {"Clock", "Clock Divider (Coming Soon)", 4}
 };
 
 const uint8_t ScriptManager::scriptLibraryCount = sizeof(ScriptManager::scriptLibrary) / sizeof(ScriptLibraryEntry);
@@ -30,7 +31,7 @@ ScriptManager::ScriptManager() : lastUpdateTime(0) {
         strcpy(scripts[i].name, "empty");
         strcpy(scripts[i].output, "");
         lfoInstances[i] = nullptr;
-        sequencerInstances[i] = nullptr;
+        steampunkInstances[i] = nullptr;
     }
 }
 
@@ -105,10 +106,13 @@ bool ScriptManager::unloadScript(uint8_t slot) {
     }
     
     // Clean up sequencer instance if exists
-    if (sequencerInstances[slot] != nullptr) {
-        sequencerInstances[slot]->stop();
-        delete sequencerInstances[slot];
-        sequencerInstances[slot] = nullptr;
+    // Basic sequencer (type 1) is deprecated
+    
+    // Clean up steampunk sequencer instance if exists
+    if (steampunkInstances[slot] != nullptr) {
+        steampunkInstances[slot]->stop();
+        delete steampunkInstances[slot];
+        steampunkInstances[slot] = nullptr;
     }
     
     // Clear script data
@@ -255,31 +259,38 @@ bool ScriptManager::loadScriptFromLibrary(uint8_t slot, uint8_t libraryIndex) {
         Serial.print("Loaded LFO in slot ");
         Serial.println(slot);
         return true;
-    } else if (entry->scriptType == 1) {  // Sequencer
-        Serial.println("Creating sequencer instance...");
-        sequencerInstances[slot] = new SequencerScript();
-        if (!sequencerInstances[slot]->begin()) {
-            Serial.println("ERROR: Sequencer begin() failed");
-            delete sequencerInstances[slot];
-            sequencerInstances[slot] = nullptr;
-            return false;
-        }
-        Serial.println("Sequencer begin() successful");
-        
-        // Set default tempo (will be updated from UI global clock)
-        sequencerInstances[slot]->setGlobalTempo(DEFAULT_CLOCK_BPM);
-        Serial.print("Tempo set to ");
-        Serial.println(DEFAULT_CLOCK_BPM);
-        
-        strcpy(scripts[slot].name, entry->name);
-        strcpy(scripts[slot].path, "builtin://sequencer");
-        scripts[slot].state = ScriptState::RUNNING;
+    } else if (entry->scriptType == 1) {  // Basic Sequencer (deprecated, type 2 is used instead)
+        Serial.println("ERROR: Basic sequencer type 1 is no longer supported");
+        return false;
         
         Serial.print("Loaded Sequencer in slot ");
         Serial.println(slot);
         Serial.print("Script name: ");
         Serial.println(scripts[slot].name);
         Serial.print("Script state: RUNNING\n");
+        return true;
+    } else if (entry->scriptType == 2) {  // SteampunQuencer
+        Serial.println("Creating steampunquencer instance...");
+        steampunkInstances[slot] = new SteampunquencerScript();
+        if (!steampunkInstances[slot]->begin()) {
+            Serial.println("ERROR: SteampunQuencer begin() failed");
+            delete steampunkInstances[slot];
+            steampunkInstances[slot] = nullptr;
+            return false;
+        }
+        Serial.println("SteampunQuencer begin() successful");
+        
+        // Set default tempo
+        steampunkInstances[slot]->setGlobalTempo(DEFAULT_CLOCK_BPM);
+        Serial.print("Tempo set to ");
+        Serial.println(DEFAULT_CLOCK_BPM);
+        
+        strcpy(scripts[slot].name, entry->name);
+        strcpy(scripts[slot].path, "builtin://steampunquencer");
+        scripts[slot].state = ScriptState::RUNNING;
+        
+        Serial.print("Loaded SteampunQuencer in slot ");
+        Serial.println(slot);
         return true;
     }
     
@@ -320,11 +331,14 @@ void ScriptManager::executeScriptFrame(uint8_t slot) {
     }
     
     // Update sequencer if this slot has one
-    if (sequencerInstances[slot] != nullptr) {
-        sequencerInstances[slot]->update();
+    // Basic sequencer (type 1) is deprecated
+    
+    // Update steampunk sequencer if this slot has one
+    if (steampunkInstances[slot] != nullptr) {
+        steampunkInstances[slot]->update();
         
         // Update display output
-        sequencerInstances[slot]->getDisplayText(scripts[slot].output, sizeof(scripts[slot].output));
+        steampunkInstances[slot]->getDisplayText(scripts[slot].output, sizeof(scripts[slot].output));
         return;
     }
     
@@ -344,46 +358,104 @@ bool ScriptManager::getLFOWaveformData(uint8_t slot, uint8_t* waveType, float* p
     return true;
 }
 
+void ScriptManager::setLFOWaveform(uint8_t slot, uint8_t waveType) {
+    if (slot >= MAX_SCRIPTS || lfoInstances[slot] == nullptr) {
+        return;
+    }
+    lfoInstances[slot]->setWaveform(waveType);
+}
+
+void ScriptManager::setLFOFrequency(uint8_t slot, float frequency) {
+    if (slot >= MAX_SCRIPTS || lfoInstances[slot] == nullptr) {
+        return;
+    }
+    lfoInstances[slot]->setFrequency(frequency);
+}
+
+void ScriptManager::setLFOLevel(uint8_t slot, float level) {
+    if (slot >= MAX_SCRIPTS || lfoInstances[slot] == nullptr) {
+        return;
+    }
+    lfoInstances[slot]->setLevel(level);
+}
+
 bool ScriptManager::getSequencerData(uint8_t slot, uint8_t* currentStep, int8_t stepValues[8], uint8_t stepDurations[8]) {
     if (slot >= MAX_SCRIPTS) {
         Serial.print("getSequencerData: Invalid slot ");
         Serial.println(slot);
         return false;
     }
-    if (sequencerInstances[slot] == nullptr) {
-        // This is normal when LFO is running
-        return false;
-    }
-    
-    if (currentStep) *currentStep = sequencerInstances[slot]->getCurrentStep();
-    if (stepValues) {
-        for (int i = 0; i < 8; i++) {
-            stepValues[i] = sequencerInstances[slot]->getStepValue(i);
-        }
-    }
-    if (stepDurations) {
-        for (int i = 0; i < 8; i++) {
-            stepDurations[i] = sequencerInstances[slot]->getStepDuration(i);
-        }
-    }
-    return true;
+    // Basic sequencer (type 1) is deprecated
+    return false;
 }
 
 void ScriptManager::setGlobalTempo(float bpm) {
-    // Update tempo for all running sequencers
+    // Update tempo for all running sequencers (steampunk only, basic seq deprecated)
     for (int i = 0; i < MAX_SCRIPTS; i++) {
-        if (sequencerInstances[i] != nullptr) {
-            sequencerInstances[i]->setGlobalTempo(bpm);
+        if (steampunkInstances[i] != nullptr) {
+            steampunkInstances[i]->setGlobalTempo(bpm);
+        }
+        if (steampunkInstances[i] != nullptr) {
+            steampunkInstances[i]->setGlobalTempo(bpm);
         }
     }
 }
 
 void ScriptManager::setSequencerStepValue(uint8_t slot, uint8_t step, int8_t value) {
-    if (slot >= MAX_SCRIPTS || sequencerInstances[slot] == nullptr) return;
-    sequencerInstances[slot]->setStepValue(step, value);
+    // Basic sequencer (type 1) is deprecated
 }
 
 void ScriptManager::setSequencerStepDuration(uint8_t slot, uint8_t step, uint8_t duration) {
-    if (slot >= MAX_SCRIPTS || sequencerInstances[slot] == nullptr) return;
-    sequencerInstances[slot]->setStepDuration(step, duration);
+    // Basic sequencer (type 1) is deprecated
+}
+
+// ========== STEAMPUNK SEQUENCER METHODS ==========
+
+bool ScriptManager::getSteampunkSequencerData(uint8_t slot, uint8_t* currentStep, uint8_t* currentBeat, int8_t stepValues[8], uint8_t stepDurations[8], uint8_t gateModes[8], uint8_t* direction, bool* steamTrigger) {
+    if (slot >= MAX_SCRIPTS || steampunkInstances[slot] == nullptr) {
+        return false;
+    }
+    
+    if (currentStep) *currentStep = steampunkInstances[slot]->getCurrentStep();
+    if (currentBeat) *currentBeat = steampunkInstances[slot]->getCurrentBeat();
+    if (direction) *direction = (uint8_t)steampunkInstances[slot]->getDirection();
+    if (steamTrigger) *steamTrigger = steampunkInstances[slot]->isSteamTrigger();
+    
+    if (stepValues) {
+        for (int i = 0; i < 8; i++) {
+            stepValues[i] = steampunkInstances[slot]->getStepValue(i);
+        }
+    }
+    if (stepDurations) {
+        for (int i = 0; i < 8; i++) {
+            stepDurations[i] = steampunkInstances[slot]->getStepDuration(i);
+        }
+    }
+    if (gateModes) {
+        for (int i = 0; i < 8; i++) {
+            gateModes[i] = (uint8_t)steampunkInstances[slot]->getStepGateMode(i);
+        }
+    }
+    
+    return true;
+}
+
+void ScriptManager::setSteampunkStepValue(uint8_t slot, uint8_t step, int8_t value) {
+    if (slot >= MAX_SCRIPTS || steampunkInstances[slot] == nullptr) return;
+    steampunkInstances[slot]->setStepValue(step, value);
+}
+
+void ScriptManager::setSteampunkStepDuration(uint8_t slot, uint8_t step, uint8_t duration) {
+    if (slot >= MAX_SCRIPTS || steampunkInstances[slot] == nullptr) return;
+    steampunkInstances[slot]->setStepDuration(step, duration);
+}
+
+void ScriptManager::setSteampunkStepGateMode(uint8_t slot, uint8_t step, uint8_t gateMode) {
+    if (slot >= MAX_SCRIPTS || steampunkInstances[slot] == nullptr) return;
+    steampunkInstances[slot]->setStepGateMode(step, (GateMode)gateMode);
+}
+
+void ScriptManager::setSteampunkDirection(uint8_t slot, uint8_t direction) {
+    if (slot >= MAX_SCRIPTS || steampunkInstances[slot] == nullptr) return;
+    steampunkInstances[slot]->setDirection((DirectionMode)direction);
 }

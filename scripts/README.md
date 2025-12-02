@@ -1,6 +1,6 @@
-# TeensySynth Scripts
+# Polyphonion Scripts
 
-This directory contains built-in and user scripts for the TeensySynth.
+This directory contains built-in and user scripts for the Polyphonion.
 
 ## Built-in Scripts
 
@@ -98,7 +98,7 @@ Right       →      (unused or additional CV channel)
 
 ## Script Slots
 
-The TeensySynth supports **4 concurrent script slots**, allowing you to run up to 4 scripts simultaneously in parallel. Each script:
+The Polyphonion supports **4 concurrent script slots**, allowing you to run up to 4 scripts simultaneously in parallel. Each script:
 - Runs independently
 - Has its own display quadrant
 - Can generate audio/CV output
