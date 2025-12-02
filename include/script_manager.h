@@ -74,9 +74,10 @@ public:
     bool getLFOWaveformData(uint8_t slot, uint8_t* waveType, float* phase);
     
     // Sequencer access
-    bool getSequencerData(uint8_t slot, uint8_t* currentStep, int8_t stepValues[8]);
+    bool getSequencerData(uint8_t slot, uint8_t* currentStep, int8_t stepValues[8], uint8_t stepDurations[8]);
     void setGlobalTempo(float bpm);  // Set tempo for all sequencers
     void setSequencerStepValue(uint8_t slot, uint8_t step, int8_t value);
+    void setSequencerStepDuration(uint8_t slot, uint8_t step, uint8_t duration);
 
 private:
     ScriptInfo scripts[MAX_SCRIPTS];

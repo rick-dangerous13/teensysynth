@@ -102,12 +102,13 @@
 // ============================================================================
 // UI Configuration - Norns-style aesthetics
 // ============================================================================
-// Colors (16-bit RGB565)
+// Colors (16-bit RGB565) - Grayscale palette
 #define COLOR_BG           0x0000  // Black background
-#define COLOR_FG           0xFFFF  // White foreground
-#define COLOR_ACCENT       0x07FF  // Cyan accent
-#define COLOR_DIM          0x7BEF  // Gray for inactive elements
-#define COLOR_HIGHLIGHT    0xFFE0  // Yellow highlight
+#define COLOR_FG           0xFFFF  // White foreground (text)
+#define COLOR_ACCENT       0xCE59  // Light gray accent (bright)
+#define COLOR_DIM          0x6B4D  // Medium gray for inactive elements
+#define COLOR_HIGHLIGHT    0xD69A  // Lighter gray highlight
+#define COLOR_DIAL         0x5D9F  // Light blue for duration dials (exception to grayscale)
 
 // Font sizes
 #define FONT_SMALL    1

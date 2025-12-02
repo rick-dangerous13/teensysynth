@@ -18,6 +18,7 @@ SequencerScript::SequencerScript()
     : dacCVInitialized(false)
     , dacGateInitialized(false)
     , currentStep(0)
+    , beatCounter(0)
     , rootNote(0)  // C
     , scaleType(0) // Major
     , gateHigh(false)
@@ -28,6 +29,7 @@ SequencerScript::SequencerScript()
     // Initialize steps to ascending scale pattern
     for (int i = 0; i < 8; i++) {
         stepValues[i] = i;  // 0-7 scale degrees
+        stepDurations[i] = 1;  // 1 beat per step by default
     }
 }
 
@@ -65,18 +67,25 @@ void SequencerScript::update() {
     unsigned long currentMicros = micros();
     unsigned long elapsed = currentMicros - lastStepMicros;
     
-    // Check if it's time for next step
+    // Check if it's time for next beat
     if (elapsed >= stepDurationMicros) {
-        // Advance to next step
-        currentStep = (currentStep + 1) % 8;
+        beatCounter++;
+        
+        // Check if we've completed all beats for this step
+        if (beatCounter >= stepDurations[currentStep]) {
+            // Advance to next step
+            currentStep = (currentStep + 1) % 8;
+            beatCounter = 0;
+        }
+        
         lastStepMicros = currentMicros;
         gateOnMicros = currentMicros;
         
-        // Output CV for this step
+        // Output CV for this step (doesn't change during beat repeats)
         float cv = calculateCVVoltage(stepValues[currentStep]);
         outputCV(cv);
         
-        // Turn gate high
+        // Turn gate high for each beat
         gateHigh = true;
         outputGate(true);
     }
@@ -105,11 +114,21 @@ void SequencerScript::setGlobalTempo(float bpm) {
 void SequencerScript::setStepValue(uint8_t step, int8_t semitones) {
     if (step >= 8) return;
     
-    // Clamp to 3 octaves range (-12 to +24 semitones)
+    // Clamp to 2 octaves range (-12 to +12 semitones)
     if (semitones < -12) semitones = -12;
-    if (semitones > 24) semitones = 24;
+    if (semitones > 12) semitones = 12;
     
     stepValues[step] = semitones;
+}
+
+void SequencerScript::setStepDuration(uint8_t step, uint8_t beats) {
+    if (step >= 8) return;
+    
+    // Clamp to 1-8 beats
+    if (beats < 1) beats = 1;
+    if (beats > 8) beats = 8;
+    
+    stepDurations[step] = beats;
 }
 
 void SequencerScript::setRootNote(uint8_t note) {

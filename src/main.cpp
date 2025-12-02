@@ -170,8 +170,9 @@ void handleScriptSelectState() {
                 // Update sequencer data if it's a sequencer
                 uint8_t currentStep;
                 int8_t stepValues[8];
-                if (scriptManager.getSequencerData(i, &currentStep, stepValues)) {
-                    ui.updateScriptSequencer(i, currentStep, stepValues);
+                uint8_t stepDurations[8];
+                if (scriptManager.getSequencerData(i, &currentStep, stepValues, stepDurations)) {
+                    ui.updateScriptSequencer(i, currentStep, stepValues, stepDurations);
                 }
             }
         }
@@ -182,27 +183,34 @@ void handleScriptSelectState() {
     // Handle encoder input
     int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
-        // If slot 0 is active and is a sequencer, adjust step value
+        // If slot 0 is active and is a sequencer, adjust step value or duration
         if (scriptManager.isScriptRunning(0)) {
             uint8_t dummy;
             int8_t dummySteps[8];
-            if (scriptManager.getSequencerData(0, &dummy, dummySteps)) {
-                // Sequencer is running - adjust current edit step value
-                ui.adjustSequencerStepValue(0, scrollDelta);
-                // Update script manager with new values
-                scriptManager.setSequencerStepValue(0, ui.getSequencerEditStep(0), 
-                                                   dummySteps[ui.getSequencerEditStep(0)] + scrollDelta);
+            uint8_t dummyDurations[8];
+            if (scriptManager.getSequencerData(0, &dummy, dummySteps, dummyDurations)) {
+                uint8_t editStep = ui.getSequencerEditStep(0);
+                if (ui.isEditingDuration(0)) {
+                    // Editing duration - adjust dial value
+                    ui.adjustSequencerStepDuration(0, scrollDelta);
+                    scriptManager.setSequencerStepDuration(0, editStep, dummyDurations[editStep] + scrollDelta);
+                } else {
+                    // Editing pitch - adjust slider value
+                    ui.adjustSequencerStepValue(0, scrollDelta);
+                    scriptManager.setSequencerStepValue(0, editStep, dummySteps[editStep] + scrollDelta);
+                }
             }
         }
     }
     
-    // Handle OK button - advance to next step for editing or go to library
+    // Handle OK button - toggle pitch/duration or advance step, or go to library
     if (input.isButtonPressed(BTN_OK)) {
         if (scriptManager.isScriptRunning(0)) {
             uint8_t dummy;
             int8_t dummySteps[8];
-            if (scriptManager.getSequencerData(0, &dummy, dummySteps)) {
-                // Sequencer is running - advance edit step
+            uint8_t dummyDurations[8];
+            if (scriptManager.getSequencerData(0, &dummy, dummySteps, dummyDurations)) {
+                // Sequencer is running - advance edit step (bar1 -> dial1 -> bar2 -> dial2 ...)
                 ui.advanceSequencerEditStep(0);
                 ui.showScriptSelectScreen();
                 return;
@@ -259,7 +267,8 @@ void handleScriptLibraryState() {
             // Initialize sequencer data if it's a sequencer
             if (libraryIndex == 1) {
                 int8_t defaultSteps[8] = {0, 2, 4, 5, 7, 9, 11, 12}; // Ascending scale
-                ui.updateScriptSequencer(slot, 0, defaultSteps);
+                uint8_t defaultDurations[8] = {1, 1, 1, 1, 1, 1, 1, 1}; // 1 beat each
+                ui.updateScriptSequencer(slot, 0, defaultSteps, defaultDurations);
                 Serial.println("Sequencer data initialized");
             }
             

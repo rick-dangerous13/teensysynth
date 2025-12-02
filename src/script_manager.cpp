@@ -344,7 +344,7 @@ bool ScriptManager::getLFOWaveformData(uint8_t slot, uint8_t* waveType, float* p
     return true;
 }
 
-bool ScriptManager::getSequencerData(uint8_t slot, uint8_t* currentStep, int8_t stepValues[8]) {
+bool ScriptManager::getSequencerData(uint8_t slot, uint8_t* currentStep, int8_t stepValues[8], uint8_t stepDurations[8]) {
     if (slot >= MAX_SCRIPTS) {
         Serial.print("getSequencerData: Invalid slot ");
         Serial.println(slot);
@@ -359,6 +359,11 @@ bool ScriptManager::getSequencerData(uint8_t slot, uint8_t* currentStep, int8_t 
     if (stepValues) {
         for (int i = 0; i < 8; i++) {
             stepValues[i] = sequencerInstances[slot]->getStepValue(i);
+        }
+    }
+    if (stepDurations) {
+        for (int i = 0; i < 8; i++) {
+            stepDurations[i] = sequencerInstances[slot]->getStepDuration(i);
         }
     }
     return true;
@@ -376,4 +381,9 @@ void ScriptManager::setGlobalTempo(float bpm) {
 void ScriptManager::setSequencerStepValue(uint8_t slot, uint8_t step, int8_t value) {
     if (slot >= MAX_SCRIPTS || sequencerInstances[slot] == nullptr) return;
     sequencerInstances[slot]->setStepValue(step, value);
+}
+
+void ScriptManager::setSequencerStepDuration(uint8_t slot, uint8_t step, uint8_t duration) {
+    if (slot >= MAX_SCRIPTS || sequencerInstances[slot] == nullptr) return;
+    sequencerInstances[slot]->setStepDuration(step, duration);
 }

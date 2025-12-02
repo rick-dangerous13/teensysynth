@@ -21,11 +21,15 @@ UI::UI() : display(nullptr), clockTempo(DEFAULT_CLOCK_BPM), multitaskingMode(fal
         scriptSlots[i].phase = 0.0f;
         scriptSlots[i].seqCurrentStep = 0;
         scriptSlots[i].seqEditStep = 0;
+        scriptSlots[i].seqEditingDuration = false;
         scriptSlots[i].lastSeqCurrentStep = 255;  // 255 = uninitialized
         scriptSlots[i].lastSeqEditStep = 255;
+        scriptSlots[i].lastSeqEditingDuration = false;
         for (int j = 0; j < 8; j++) {
             scriptSlots[i].seqStepValues[j] = 0;
+            scriptSlots[i].seqStepDurations[j] = 1;
             scriptSlots[i].lastSeqStepValues[j] = 0;
+            scriptSlots[i].lastSeqStepDurations[j] = 1;
         }
     }
     
@@ -463,10 +467,14 @@ void UI::drawScriptSlot(uint8_t slot, bool selected) {
                 }
             }
         } else if (scriptSlots[slot].scriptType == 1) {
-            // Sequencer - draw slider visualization
+            // Sequencer - split screen: top 3/4 for sliders, bottom 1/4 for dials
             int16_t contentY = y + 25;
             int16_t contentH = h - 30;
-            drawSequencerSliders(slot, x, contentY, w, contentH);
+            int16_t sliderH = (contentH * 3) / 4;
+            int16_t dialH = contentH - sliderH;
+            
+            drawSequencerSliders(slot, x, contentY, w, sliderH);
+            drawSequencerDials(slot, x, contentY + sliderH, w, dialH);
         } else {
             // Unknown script type - show error
             display->fillRect(x + 6, y + 25, w - 12, h - 30, COLOR_BG);
@@ -510,13 +518,15 @@ void UI::drawSequencerSliders(uint8_t slot, int16_t x, int16_t y, int16_t w, int
     
     // Check if this is first draw or if parameters changed significantly
     bool firstDraw = (scriptSlots[slot].lastSeqCurrentStep == 255);  // 255 = uninitialized
+    bool editingDuration = scriptSlots[slot].seqEditingDuration;
+    bool lastEditingDuration = scriptSlots[slot].lastSeqEditingDuration;
     
     // Calculate slider dimensions
     int16_t sliderSpacing = 2;
     int16_t sliderWidth = (w - 20) / 8 - sliderSpacing;
-    int16_t sliderHeight = h - 20;
+    int16_t sliderHeight = h - 10;
     int16_t sliderStartX = x + 10;
-    int16_t sliderStartY = y + 10;
+    int16_t sliderStartY = y + 5;
     
     uint8_t currentStep = scriptSlots[slot].seqCurrentStep;
     uint8_t editStep = scriptSlots[slot].seqEditStep;
@@ -536,7 +546,7 @@ void UI::drawSequencerSliders(uint8_t slot, int16_t x, int16_t y, int16_t w, int
             display->drawRect(sliderX, sliderStartY, sliderWidth, sliderHeight, COLOR_DIM);
             
             // Calculate fill height
-            float normalizedValue = (float)(stepValue + 12) / 36.0f;
+            float normalizedValue = (float)(stepValue + 12) / 24.0f;
             if (normalizedValue < 0.0f) normalizedValue = 0.0f;
             if (normalizedValue > 1.0f) normalizedValue = 1.0f;
             
@@ -547,20 +557,14 @@ void UI::drawSequencerSliders(uint8_t slot, int16_t x, int16_t y, int16_t w, int
             uint16_t fillColor = COLOR_DIM;
             if (i == currentStep) {
                 fillColor = COLOR_ACCENT;
-            } else if (i == editStep) {
-                fillColor = COLOR_HIGHLIGHT;
+            } else if (i == editStep && !editingDuration) {
+                fillColor = COLOR_HIGHLIGHT;  // Highlight only if editing pitch
             }
             
             // Draw filled portion
             if (fillHeight > 0) {
                 display->fillRect(sliderX + 1, fillY, sliderWidth - 2, fillHeight, fillColor);
             }
-            
-            // Draw step number below slider
-            char stepNum[2];
-            snprintf(stepNum, sizeof(stepNum), "%d", i + 1);
-            display->drawText(sliderX + sliderWidth/2 - 3, sliderStartY + sliderHeight + 3, stepNum, 
-                             (i == editStep) ? COLOR_HIGHLIGHT : COLOR_DIM, FONT_SMALL);
         }
     } else {
         // Selective update - only redraw changed sliders
@@ -573,8 +577,8 @@ void UI::drawSequencerSliders(uint8_t slot, int16_t x, int16_t y, int16_t w, int
             if (stepValue != lastStepValue) needsUpdate = true;
             if (i == currentStep && i != lastCurrentStep) needsUpdate = true;
             if (i == lastCurrentStep && i != currentStep) needsUpdate = true;
-            if (i == editStep && i != lastEditStep) needsUpdate = true;
-            if (i == lastEditStep && i != editStep) needsUpdate = true;
+            if (i == editStep && (i != lastEditStep || editingDuration != lastEditingDuration)) needsUpdate = true;
+            if (i == lastEditStep && (i != editStep || editingDuration != lastEditingDuration)) needsUpdate = true;
             
             if (needsUpdate) {
                 int16_t sliderX = sliderStartX + i * (sliderWidth + sliderSpacing);
@@ -583,7 +587,7 @@ void UI::drawSequencerSliders(uint8_t slot, int16_t x, int16_t y, int16_t w, int
                 display->fillRect(sliderX + 1, sliderStartY + 1, sliderWidth - 2, sliderHeight - 2, COLOR_BG);
                 
                 // Calculate fill height
-                float normalizedValue = (float)(stepValue + 12) / 36.0f;
+                float normalizedValue = (float)(stepValue + 12) / 24.0f;
                 if (normalizedValue < 0.0f) normalizedValue = 0.0f;
                 if (normalizedValue > 1.0f) normalizedValue = 1.0f;
                 
@@ -594,23 +598,13 @@ void UI::drawSequencerSliders(uint8_t slot, int16_t x, int16_t y, int16_t w, int
                 uint16_t fillColor = COLOR_DIM;
                 if (i == currentStep) {
                     fillColor = COLOR_ACCENT;
-                } else if (i == editStep) {
-                    fillColor = COLOR_HIGHLIGHT;
+                } else if (i == editStep && !editingDuration) {
+                    fillColor = COLOR_HIGHLIGHT;  // Highlight only if editing pitch
                 }
                 
                 // Draw filled portion
                 if (fillHeight > 0) {
                     display->fillRect(sliderX + 1, fillY, sliderWidth - 2, fillHeight, fillColor);
-                }
-                
-                // Redraw step number if edit state changed
-                if ((i == editStep && i != lastEditStep) || (i == lastEditStep && i != editStep)) {
-                    char stepNum[2];
-                    snprintf(stepNum, sizeof(stepNum), "%d", i + 1);
-                    // Clear text area first
-                    display->fillRect(sliderX, sliderStartY + sliderHeight + 3, sliderWidth, 8, COLOR_BG);
-                    display->drawText(sliderX + sliderWidth/2 - 3, sliderStartY + sliderHeight + 3, stepNum, 
-                                     (i == editStep) ? COLOR_HIGHLIGHT : COLOR_DIM, FONT_SMALL);
                 }
             }
         }
@@ -619,8 +613,126 @@ void UI::drawSequencerSliders(uint8_t slot, int16_t x, int16_t y, int16_t w, int
     // Update tracking state
     scriptSlots[slot].lastSeqCurrentStep = currentStep;
     scriptSlots[slot].lastSeqEditStep = editStep;
+    scriptSlots[slot].lastSeqEditingDuration = editingDuration;
     for (int i = 0; i < 8; i++) {
         scriptSlots[slot].lastSeqStepValues[i] = scriptSlots[slot].seqStepValues[i];
+    }
+}
+
+void UI::drawSequencerDials(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h) {
+    if (!display || slot >= MAX_SCRIPTS) return;
+    
+    bool firstDraw = (scriptSlots[slot].lastSeqCurrentStep == 255);
+    bool editingDuration = scriptSlots[slot].seqEditingDuration;
+    bool lastEditingDuration = scriptSlots[slot].lastSeqEditingDuration;
+    
+    // Force redraw of all dials if any duration value hasn't been initialized
+    if (!firstDraw) {
+        for (int i = 0; i < 8; i++) {
+            if (scriptSlots[slot].lastSeqStepDurations[i] == 0) {
+                firstDraw = true;
+                break;
+            }
+        }
+    }
+    
+    // Calculate dial dimensions
+    int16_t dialSpacing = 2;
+    int16_t dialWidth = (w - 20) / 8 - dialSpacing;
+    int16_t dialRadius = (dialWidth > (h - 10)) ? (h - 10) / 2 : dialWidth / 2;
+    if (dialRadius < 8) dialRadius = 8;
+    int16_t dialStartX = x + 10 + dialWidth / 2;
+    int16_t dialCenterY = y + h / 2;
+    
+    uint8_t currentStep = scriptSlots[slot].seqCurrentStep;
+    uint8_t editStep = scriptSlots[slot].seqEditStep;
+    uint8_t lastEditStep = scriptSlots[slot].lastSeqEditStep;
+    
+    if (firstDraw) {
+        // First draw - clear and draw all dials
+        display->fillRect(x + 4, y, w - 8, h, COLOR_BG);
+        
+        for (int i = 0; i < 8; i++) {
+            int16_t dialCenterX = dialStartX + i * (dialWidth + dialSpacing);
+            uint8_t duration = scriptSlots[slot].seqStepDurations[i];
+            
+            // Draw potentiometer-style dial
+            // Outer circle - draw twice for brightness in light blue
+            display->drawCircle(dialCenterX, dialCenterY, dialRadius, COLOR_DIAL);
+            display->drawCircle(dialCenterX, dialCenterY, dialRadius - 1, COLOR_DIAL);
+            
+            // Draw tick marks for positions 1-8 around the circle
+            for (int pos = 1; pos <= 8; pos++) {
+                // Calculate angle: start at 8 o'clock (150°), sweep clockwise to 4 o'clock (30°)
+                // That's 240° total sweep for 8 positions
+                float angle = (150.0f + ((pos - 1) * 240.0f / 7.0f)) * PI / 180.0f;
+                int16_t tickX = dialCenterX + (int16_t)((dialRadius - 2) * cos(angle));
+                int16_t tickY = dialCenterY + (int16_t)((dialRadius - 2) * sin(angle));
+                // Draw tick marks in light blue
+                display->fillCircle(tickX, tickY, 1, COLOR_DIAL);
+            }
+            
+            // Draw pointer indicating current value
+            float pointerAngle = (150.0f + ((duration - 1) * 240.0f / 7.0f)) * PI / 180.0f;
+            int16_t pointerX = dialCenterX + (int16_t)((dialRadius - 3) * cos(pointerAngle));
+            int16_t pointerY = dialCenterY + (int16_t)((dialRadius - 3) * sin(pointerAngle));
+            
+            uint16_t pointerColor = COLOR_DIAL;
+            if (i == editStep && editingDuration) {
+                pointerColor = COLOR_HIGHLIGHT;
+            } else if (i == currentStep) {
+                pointerColor = COLOR_ACCENT;
+            }
+            
+            // Draw pointer line from center - draw twice for brightness
+            display->drawLine(dialCenterX, dialCenterY, pointerX, pointerY, pointerColor);
+            display->drawLine(dialCenterX + 1, dialCenterY, pointerX + 1, pointerY, pointerColor);
+            
+            // Draw larger circle at pointer tip for visibility
+            display->fillCircle(pointerX, pointerY, 2, pointerColor);
+        }
+    } else {
+        // Selective update - only redraw changed dials
+        for (int i = 0; i < 8; i++) {
+            uint8_t duration = scriptSlots[slot].seqStepDurations[i];
+            uint8_t lastDuration = scriptSlots[slot].lastSeqStepDurations[i];
+            
+            bool needsUpdate = false;
+            if (duration != lastDuration) needsUpdate = true;
+            if (i == editStep && (i != lastEditStep || editingDuration != lastEditingDuration)) needsUpdate = true;
+            if (i == lastEditStep && (i != editStep || editingDuration != lastEditingDuration)) needsUpdate = true;
+            
+            if (needsUpdate) {
+                int16_t dialCenterX = dialStartX + i * (dialWidth + dialSpacing);
+                
+                // Clear dial interior (but not the outer ring or tick marks)
+                display->fillCircle(dialCenterX, dialCenterY, dialRadius - 3, COLOR_BG);
+                
+                // Redraw pointer for new value
+                float pointerAngle = (150.0f + ((duration - 1) * 240.0f / 7.0f)) * PI / 180.0f;
+                int16_t pointerX = dialCenterX + (int16_t)((dialRadius - 3) * cos(pointerAngle));
+                int16_t pointerY = dialCenterY + (int16_t)((dialRadius - 3) * sin(pointerAngle));
+                
+                uint16_t pointerColor = COLOR_DIAL;
+                if (i == editStep && editingDuration) {
+                    pointerColor = COLOR_HIGHLIGHT;
+                } else if (i == currentStep) {
+                    pointerColor = COLOR_ACCENT;
+                }
+                
+                // Draw pointer line from center - draw twice for brightness
+                display->drawLine(dialCenterX, dialCenterY, pointerX, pointerY, pointerColor);
+                display->drawLine(dialCenterX + 1, dialCenterY, pointerX + 1, pointerY, pointerColor);
+                
+                // Draw larger circle at pointer tip for visibility
+                display->fillCircle(pointerX, pointerY, 2, pointerColor);
+            }
+        }
+    }
+    
+    // Update tracking state
+    for (int i = 0; i < 8; i++) {
+        scriptSlots[slot].lastSeqStepDurations[i] = scriptSlots[slot].seqStepDurations[i];
     }
 }
 
@@ -630,7 +742,7 @@ void UI::setScriptType(uint8_t slot, uint8_t type) {
     }
 }
 
-void UI::updateScriptSequencer(uint8_t slot, uint8_t currentStep, int8_t stepValues[8]) {
+void UI::updateScriptSequencer(uint8_t slot, uint8_t currentStep, int8_t stepValues[8], uint8_t stepDurations[8]) {
     if (slot >= MAX_SCRIPTS) return;
     
     scriptSlots[slot].seqCurrentStep = currentStep;
@@ -639,11 +751,30 @@ void UI::updateScriptSequencer(uint8_t slot, uint8_t currentStep, int8_t stepVal
             scriptSlots[slot].seqStepValues[i] = stepValues[i];
         }
     }
+    if (stepDurations) {
+        for (int i = 0; i < 8; i++) {
+            scriptSlots[slot].seqStepDurations[i] = stepDurations[i];
+        }
+    }
 }
 
 void UI::advanceSequencerEditStep(uint8_t slot) {
     if (slot < MAX_SCRIPTS) {
-        scriptSlots[slot].seqEditStep = (scriptSlots[slot].seqEditStep + 1) % 8;
+        // Toggle between pitch and duration
+        if (!scriptSlots[slot].seqEditingDuration) {
+            // Was editing pitch, now edit duration
+            scriptSlots[slot].seqEditingDuration = true;
+        } else {
+            // Was editing duration, advance to next step's pitch
+            scriptSlots[slot].seqEditingDuration = false;
+            scriptSlots[slot].seqEditStep = (scriptSlots[slot].seqEditStep + 1) % 8;
+        }
+    }
+}
+
+void UI::toggleSequencerEditMode(uint8_t slot) {
+    if (slot < MAX_SCRIPTS) {
+        scriptSlots[slot].seqEditingDuration = !scriptSlots[slot].seqEditingDuration;
     }
 }
 
@@ -653,11 +784,26 @@ void UI::adjustSequencerStepValue(uint8_t slot, int8_t delta) {
     uint8_t editStep = scriptSlots[slot].seqEditStep;
     scriptSlots[slot].seqStepValues[editStep] += delta;
     
-    // Clamp to valid range (-12 to +24)
+    // Clamp to valid range (-12 to +12)
     if (scriptSlots[slot].seqStepValues[editStep] < -12) {
         scriptSlots[slot].seqStepValues[editStep] = -12;
     }
-    if (scriptSlots[slot].seqStepValues[editStep] > 24) {
-        scriptSlots[slot].seqStepValues[editStep] = 24;
+    if (scriptSlots[slot].seqStepValues[editStep] > 12) {
+        scriptSlots[slot].seqStepValues[editStep] = 12;
+    }
+}
+
+void UI::adjustSequencerStepDuration(uint8_t slot, int8_t delta) {
+    if (slot >= MAX_SCRIPTS) return;
+    
+    uint8_t editStep = scriptSlots[slot].seqEditStep;
+    scriptSlots[slot].seqStepDurations[editStep] += delta;
+    
+    // Clamp to valid range (1 to 8)
+    if (scriptSlots[slot].seqStepDurations[editStep] < 1) {
+        scriptSlots[slot].seqStepDurations[editStep] = 1;
+    }
+    if (scriptSlots[slot].seqStepDurations[editStep] > 8) {
+        scriptSlots[slot].seqStepDurations[editStep] = 8;
     }
 }

@@ -26,7 +26,8 @@ public:
     void stop();
     
     // Sequencer parameters
-    void setStepValue(uint8_t step, int8_t semitones); // -12 to +24 (3 octaves)
+    void setStepValue(uint8_t step, int8_t semitones); // -12 to +12 (2 octaves)
+    void setStepDuration(uint8_t step, uint8_t beats); // 1-8 beats per step
     void setRootNote(uint8_t note);     // 0-11 (C to B)
     void setScale(uint8_t scale);       // 0=Major, 1=Minor
     void setCurrentStep(uint8_t step);  // Manually set current step (0-7)
@@ -34,6 +35,7 @@ public:
     
     // Getters
     int8_t getStepValue(uint8_t step) const { return (step < 8) ? stepValues[step] : 0; }
+    uint8_t getStepDuration(uint8_t step) const { return (step < 8) ? stepDurations[step] : 1; }
     uint8_t getCurrentStep() const { return currentStep; }
     uint8_t getRootNote() const { return rootNote; }
     uint8_t getScale() const { return scaleType; }
@@ -51,7 +53,9 @@ private:
     
     // Sequencer state
     int8_t stepValues[8];      // Step values in scale degrees
+    uint8_t stepDurations[8];  // Duration in beats (1-8) for each step
     uint8_t currentStep;       // Current step (0-7)
+    uint8_t beatCounter;       // Counts beats within current step
     uint8_t rootNote;          // Root note (0-11: C to B)
     uint8_t scaleType;         // 0=Major, 1=Minor
     bool gateHigh;             // Current gate state

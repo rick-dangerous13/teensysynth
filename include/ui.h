@@ -28,11 +28,15 @@ struct ScriptSlot {
     float phase;       // Current phase for animation (for LFO)
     uint8_t seqCurrentStep;  // Current step for sequencer
     int8_t seqStepValues[8]; // Step values for sequencer
+    uint8_t seqStepDurations[8]; // Step durations (1-8 beats)
     uint8_t seqEditStep;     // Which step is being edited
+    bool seqEditingDuration; // true=editing duration dial, false=editing pitch
     // Previous state tracking for sequencer (to avoid flickering)
     uint8_t lastSeqCurrentStep;
     int8_t lastSeqStepValues[8];
+    uint8_t lastSeqStepDurations[8];
     uint8_t lastSeqEditStep;
+    bool lastSeqEditingDuration;
 };
 
 class UI {
@@ -63,7 +67,7 @@ public:
     void updateScriptInfo(uint8_t slot, const char* name);
     void updateScriptOutput(uint8_t slot, const char* output);  // Update output text
     void updateScriptWaveform(uint8_t slot, uint8_t waveType, float phase);  // Update waveform display
-    void updateScriptSequencer(uint8_t slot, uint8_t currentStep, int8_t stepValues[8]);  // Update sequencer display
+    void updateScriptSequencer(uint8_t slot, uint8_t currentStep, int8_t stepValues[8], uint8_t stepDurations[8]);  // Update sequencer display
     void updateScriptDisplay(uint8_t slot, const char* output);
     void setScriptType(uint8_t slot, uint8_t type);  // Set script type for proper visualization
     
@@ -80,8 +84,11 @@ public:
     
     // Sequencer editing
     uint8_t getSequencerEditStep(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].seqEditStep : 0; }
+    bool isEditingDuration(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].seqEditingDuration : false; }
     void advanceSequencerEditStep(uint8_t slot);
+    void toggleSequencerEditMode(uint8_t slot);  // Toggle between pitch and duration editing
     void adjustSequencerStepValue(uint8_t slot, int8_t delta);
+    void adjustSequencerStepDuration(uint8_t slot, int8_t delta);
     
 private:
     Display* display;
@@ -108,6 +115,7 @@ private:
     void drawMenuItem(int16_t y, const char* label, bool selected);
     void drawScriptSlot(uint8_t slot, bool selected);
     void drawSequencerSliders(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
+    void drawSequencerDials(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
     void drawHeader(const char* title);
     void drawFooter(const char* leftLabel, const char* rightLabel);
 };
