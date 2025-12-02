@@ -46,14 +46,27 @@ A Teensy 4.1-based synthesizer in Doepfer Eurorack format with a Norns Shield-st
 | Encoder +   | 3.3V     | Power |
 | Encoder GND | GND      | Ground |
 
-#### MCP4725 DAC (CV Output)
+#### MCP4725 DACs (CV and Gate Output)
+
+**DAC #1 (CV Output - Address 0x60):**
 | MCP4725 Pin | Teensy 4.1 Pin | Notes |
 |-------------|----------------|-------|
 | VCC         | 5V            | For full 0-5V CV range |
 | GND         | GND           | Ground |
-| SDA         | 18            | I2C Data |
-| SCL         | 19            | I2C Clock |
-| OUT         | CV Jack       | 0-5V Eurorack CV output |
+| SDA         | 18            | I2C Data (shared) |
+| SCL         | 19            | I2C Clock (shared) |
+| OUT         | TRRS Left     | 0-5V Eurorack CV output |
+
+**DAC #2 (Gate Output - Address 0x61):**
+| MCP4725 Pin | Teensy 4.1 Pin | Notes |
+|-------------|----------------|-------|
+| VCC         | 5V            | For 5V gate signals |
+| GND         | GND           | Ground |
+| SDA         | 18            | I2C Data (shared) |
+| SCL         | 19            | I2C Clock (shared) |
+| OUT         | TRRS Ring     | Gate output (0V/5V) |
+
+**Important:** You need two MCP4725 modules with different I2C addresses. Most modules are fixed at 0x60, so you'll need to source a second module with address 0x61 (or 0x62, and update `config.h`).
 
 ## Building
 

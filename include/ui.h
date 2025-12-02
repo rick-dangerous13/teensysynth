@@ -40,8 +40,8 @@ struct ScriptSlot {
     uint8_t seqStepDurations[8]; // Step durations (1-8 beats)
     uint8_t seqEditStep;     // Which step is being edited
     bool seqEditingDuration; // true=editing duration dial, false=editing pitch
-    uint8_t seqEditMode;     // 0=pitch, 1=gate mode, 2=duration (for steampunk)
-    // Steampunk sequencer specific
+    uint8_t seqEditMode;     // 0=pitch, 1=gate mode, 2=duration (for poliquencer)
+    // Poliquencer sequencer specific
     uint8_t seqGateModes[8]; // Gate modes: 0=normal, 1=skip, 2=slide
     uint8_t seqDirection;    // Direction: 0=fwd, 1=rev, 2=pendulum, 3=random
     uint8_t seqCurrentBeat;  // Current beat within step (for ratchet animation)
@@ -121,8 +121,8 @@ public:
     float getLFOFrequency(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].lfoFrequency : 1.0f; }
     float getLFOLevel(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].lfoLevel : 5.0f; }
     
-    // Steampunk sequencer
-    void updateSteampunkSequencer(uint8_t slot, uint8_t currentStep, uint8_t currentBeat, int8_t stepValues[8], uint8_t stepDurations[8], uint8_t gateModes[8], uint8_t direction, bool steamTrigger);
+    // Poliquencer sequencer
+    void updatePoliquencerSequencer(uint8_t slot, uint8_t currentStep, uint8_t currentBeat, int8_t stepValues[8], uint8_t stepDurations[8], uint8_t gateModes[8], uint8_t direction, bool steamTrigger);
     void toggleStepGateMode(uint8_t slot);
     void adjustStepGateMode(uint8_t slot, int8_t delta);
     void cycleDirection(uint8_t slot);
@@ -153,7 +153,7 @@ private:
     void drawScriptSlot(uint8_t slot, bool selected);
     void drawSequencerSliders(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
     void drawSequencerDials(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
-    void drawSteampunkSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
+    void drawPoliquencerSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
     void drawHeader(const char* title);
     void drawFooter(const char* leftLabel, const char* rightLabel);
 };

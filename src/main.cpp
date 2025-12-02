@@ -176,13 +176,13 @@ void handleScriptSelectState() {
                     ui.updateScriptSequencer(i, currentStep, stepValues, stepDurations);
                 }
                 
-                // Update steampunk sequencer data if it's a steampunk sequencer
+                // Update poliquencer sequencer data if it's a poliquencer sequencer
                 uint8_t currentBeat;
                 uint8_t gateModes[8];
                 uint8_t direction;
                 bool steamTrigger;
-                if (scriptManager.getSteampunkSequencerData(i, &currentStep, &currentBeat, stepValues, stepDurations, gateModes, &direction, &steamTrigger)) {
-                    ui.updateSteampunkSequencer(i, currentStep, currentBeat, stepValues, stepDurations, gateModes, direction, steamTrigger);
+                if (scriptManager.getPoliquencerData(i, &currentStep, &currentBeat, stepValues, stepDurations, gateModes, &direction, &steamTrigger)) {
+                    ui.updatePoliquencerSequencer(i, currentStep, currentBeat, stepValues, stepDurations, gateModes, direction, steamTrigger);
                 }
             }
         }
@@ -235,30 +235,30 @@ void handleScriptSelectState() {
                     scriptManager.setSequencerStepValue(0, editStep, dummySteps[editStep] + scrollDelta);
                 }
             } 
-            // Try steampunk sequencer
-            else if (scriptManager.getSteampunkSequencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam)) {
+            // Try poliquencer sequencer
+            else if (scriptManager.getPoliquencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam)) {
                 uint8_t editStep = ui.getSequencerEditStep(0);
                 uint8_t editMode = ui.getSequencerEditMode(0);
                 
                 if (editMode == 0) {
                     // Mode 0: Editing pitch - adjust lever value
                     ui.adjustSequencerStepValue(0, scrollDelta);
-                    scriptManager.setSteampunkStepValue(0, editStep, dummySteps[editStep] + scrollDelta);
+                    scriptManager.setPoliquencerStepValue(0, editStep, dummySteps[editStep] + scrollDelta);
                 } else if (editMode == 1) {
                     // Mode 1: Editing gate mode - cycle through switch positions
                     // Get current data first
-                    scriptManager.getSteampunkSequencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam);
+                    scriptManager.getPoliquencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam);
                     // Calculate new gate mode
                     int8_t newMode = (int8_t)dummyGateModes[editStep] + scrollDelta;
                     if (newMode < 0) newMode = 2;
                     if (newMode > 2) newMode = 0;
                     // Update UI and script manager
                     ui.adjustStepGateMode(0, scrollDelta);
-                    scriptManager.setSteampunkStepGateMode(0, editStep, (uint8_t)newMode);
+                    scriptManager.setPoliquencerStepGateMode(0, editStep, (uint8_t)newMode);
                 } else if (editMode == 2) {
                     // Mode 2: Editing duration - adjust crank value
                     ui.adjustSequencerStepDuration(0, scrollDelta);
-                    scriptManager.setSteampunkStepDuration(0, editStep, dummyDurations[editStep] + scrollDelta);
+                    scriptManager.setPoliquencerStepDuration(0, editStep, dummyDurations[editStep] + scrollDelta);
                 }
             }
         }
@@ -288,8 +288,8 @@ void handleScriptSelectState() {
                 ui.showScriptSelectScreen();
                 return;
             }
-            // Steampunk sequencer: advance edit step (lever1 -> crank1 -> lever2 -> crank2 ...)
-            else if (scriptManager.getSteampunkSequencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam)) {
+            // Poliquencer sequencer: advance edit step (lever1 -> crank1 -> lever2 -> crank2 ...)
+            else if (scriptManager.getPoliquencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam)) {
                 ui.advanceSequencerEditStep(0);
                 ui.showScriptSelectScreen();
                 return;
@@ -338,27 +338,22 @@ void handleScriptLibraryState() {
             // Update script info in UI
             const char* scriptName = scriptManager.getScriptName(slot);
             ui.updateScriptInfo(slot, scriptName);
-            // Set script type for proper visualization (0=LFO, 1=Sequencer)
-            ui.setScriptType(slot, libraryIndex);
+            // Set script type for proper visualization (0=LFO, 2=Poliquencer)
+            const ScriptLibraryEntry* entry = scriptManager.getScriptLibraryEntry(libraryIndex);
+            ui.setScriptType(slot, entry->scriptType);
             
             Serial.print("Script loaded: ");
             Serial.println(scriptName);
             Serial.print("Script type set to: ");
-            Serial.println(libraryIndex);
+            Serial.println(entry->scriptType);
             
-            // Initialize sequencer data if it's a sequencer
-            if (libraryIndex == 1) {
-                int8_t defaultSteps[8] = {0, 2, 4, 5, 7, 9, 11, 12}; // Ascending scale
-                uint8_t defaultDurations[8] = {1, 1, 1, 1, 1, 1, 1, 1}; // 1 beat each
-                ui.updateScriptSequencer(slot, 0, defaultSteps, defaultDurations);
-            }
-            // Initialize steampunk sequencer data if it's a steampunk sequencer
-            else if (libraryIndex == 2) {
+            // Initialize poliquencer sequencer data if it's a poliquencer
+            if (entry->scriptType == 2) {
                 int8_t defaultSteps[8] = {0, 4, 7, 12, 10, 7, 5, 2}; // Interesting melodic pattern
                 uint8_t defaultDurations[8] = {1, 1, 1, 1, 1, 1, 1, 1}; // 1 beat each
                 uint8_t defaultGateModes[8] = {0, 0, 0, 2, 0, 1, 0, 0}; // Normal, normal, normal, slide, normal, skip, normal, normal
-                ui.updateSteampunkSequencer(slot, 0, 0, defaultSteps, defaultDurations, defaultGateModes, 0, false);
-                Serial.println("Sequencer data initialized");
+                ui.updatePoliquencerSequencer(slot, 0, 0, defaultSteps, defaultDurations, defaultGateModes, 0, false);
+                Serial.println("Poliquencer data initialized");
             }
             
             // Go back to script select screen

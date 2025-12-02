@@ -157,15 +157,15 @@ void UI::showScriptLibraryScreen() {
         
         // Draw library items (temp names, should be updated from main loop)
         int16_t startY = 50;
-        const char* tempItems[] = {"LFO", "8 Step Sequencer", "SteampunQuencer", "Envelope", "Clock"};
-        for (int i = 0; i < menuItemCount && i < 5; i++) {
+        const char* tempItems[] = {"LFO", "Poliquencer", "Envelope", "Clock"};
+        for (int i = 0; i < menuItemCount && i < 4; i++) {
             drawMenuItem(startY + i * MENU_ITEM_H, tempItems[i], i == menuSelection);
         }
     } else if (lastMenuSelection != menuSelection) {
         // Only redraw the changed menu items
         int16_t startY = 50;
-        const char* tempItems[] = {"LFO", "8 Step Sequencer", "SteampunQuencer", "Envelope", "Clock"};
-        if (lastMenuSelection < 5) {
+        const char* tempItems[] = {"LFO", "Poliquencer", "Envelope", "Clock"};
+        if (lastMenuSelection < 4) {
             drawMenuItem(startY + lastMenuSelection * MENU_ITEM_H, tempItems[lastMenuSelection], false);
         }
         if (menuSelection < 5) {
@@ -426,8 +426,8 @@ void UI::drawScriptSlot(uint8_t slot, bool selected) {
     // Draw script name or "empty"
     if (scriptSlots[slot].active) {
         if (scriptSlots[slot].scriptType == 2) {
-            // Steampunk title at top
-            display->drawText(x + 20, y + 5, "STEAMPUNQUENCER", COLOR_FG, FONT_SMALL);
+            // Poliquencer title at top
+            display->drawText(x + 20, y + 5, "POLIQUENCER", COLOR_FG, FONT_SMALL);
         } else {
             display->drawText(x + 20, y + 5, scriptSlots[slot].name, COLOR_FG, FONT_MEDIUM);
         }
@@ -586,10 +586,10 @@ void UI::drawScriptSlot(uint8_t slot, bool selected) {
             drawSequencerSliders(slot, x, contentY, w, sliderH);
             drawSequencerDials(slot, x, contentY + sliderH, w, dialH);
         } else if (scriptSlots[slot].scriptType == 2) {
-            // SteampunQuencer - full steampunk aesthetic
+            // Poliquencer - full poliquencer aesthetic
             int16_t contentY = y + 25;
             int16_t contentH = h - 30;
-            drawSteampunkSequencer(slot, x, contentY, w, contentH);
+            drawPoliquencerSequencer(slot, x, contentY, w, contentH);
         } else {
             // Unknown script type - show error
             display->fillRect(x + 6, y + 25, w - 12, h - 30, COLOR_BG);
@@ -875,11 +875,11 @@ void UI::updateScriptSequencer(uint8_t slot, uint8_t currentStep, int8_t stepVal
 
 void UI::advanceSequencerEditStep(uint8_t slot) {
     if (slot < MAX_SCRIPTS) {
-        // Check if this is a steampunk sequencer (has gate modes)
-        bool isSteampunk = (scriptSlots[slot].scriptType == 2);
+        // Check if this is a poliquencer sequencer (has gate modes)
+        bool isPoliquencer = (scriptSlots[slot].scriptType == 2);
         
-        if (isSteampunk) {
-            // Steampunk: cycle through lever → switch → crank → next step's lever
+        if (isPoliquencer) {
+            // Poliquencer: cycle through lever → switch → crank → next step's lever
             scriptSlots[slot].seqEditMode++;
             if (scriptSlots[slot].seqEditMode > 2) {
                 scriptSlots[slot].seqEditMode = 0;
@@ -992,7 +992,7 @@ void UI::adjustLFOLevel(uint8_t slot, int delta) {
 
 // ========== STEAMPUNK SEQUENCER ==========
 
-void UI::updateSteampunkSequencer(uint8_t slot, uint8_t currentStep, uint8_t currentBeat, int8_t stepValues[8], uint8_t stepDurations[8], uint8_t gateModes[8], uint8_t direction, bool steamTrigger) {
+void UI::updatePoliquencerSequencer(uint8_t slot, uint8_t currentStep, uint8_t currentBeat, int8_t stepValues[8], uint8_t stepDurations[8], uint8_t gateModes[8], uint8_t direction, bool steamTrigger) {
     if (slot >= MAX_SCRIPTS) return;
     
     scriptSlots[slot].seqCurrentStep = currentStep;
@@ -1031,7 +1031,7 @@ void UI::cycleDirection(uint8_t slot) {
     scriptSlots[slot].seqDirection = (scriptSlots[slot].seqDirection + 1) % 4;
 }
 
-void UI::drawSteampunkSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h) {
+void UI::drawPoliquencerSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h) {
     if (!display || slot >= MAX_SCRIPTS) return;
     
     bool firstDraw = (scriptSlots[slot].lastSeqCurrentStep == 255);

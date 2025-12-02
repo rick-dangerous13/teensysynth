@@ -63,11 +63,10 @@ Both buttons use internal pull-up resistors. Pressing button connects pin to GND
 ```
 MCP4725 Pin    Teensy 4.1    Notes
 -----------    ----------    -----
-VDD     →      5V            Must be 5V for 0-5V range
+VCC     →      5V            Must be 5V for 0-5V range
 GND     →      GND           
 SDA     →      Pin 18        I2C Data (shared)
 SCL     →      Pin 19        I2C Clock (shared)
-A0      →      GND           Sets address to 0x60
 OUT     →      TRRS Left     CV output 0-5V
 ```
 
@@ -75,17 +74,18 @@ OUT     →      TRRS Left     CV output 0-5V
 ```
 MCP4725 Pin    Teensy 4.1    Notes
 -----------    ----------    -----
-VDD     →      5V            Must be 5V for 0-5V range
+VCC     →      5V            Must be 5V for 0-5V range
 GND     →      GND           
 SDA     →      Pin 18        I2C Data (shared with DAC #1)
 SCL     →      Pin 19        I2C Clock (shared with DAC #1)
-A0      →      VDD (5V)      Sets address to 0x61
 OUT     →      TRRS Ring     Gate output 0V/5V
 ```
 
-**Critical:** The A0 pin determines the I2C address:
-- A0 → GND = Address 0x60 (CV DAC)
-- A0 → VDD = Address 0x61 (Gate DAC)
+**Important:** Most MCP4725 breakout boards have fixed I2C addresses set by the manufacturer:
+- Standard boards: Address 0x60 or 0x62 (check your module's documentation)
+- If you need two DACs, you must purchase modules with **different addresses**
+- Common combinations: 0x60 + 0x61, or 0x60 + 0x62
+- Some modules have solder jumpers to change the address
 
 ### 6. TRRS Jack Output (Eurorack CV/Gate)
 ```
@@ -99,9 +99,11 @@ Right   →      (unused)          Reserved for future
 
 ## I2C Bus Configuration
 
-Both MCP4725 DACs share the same I2C bus (SDA=18, SCL=19) but use different addresses:
-- **DAC #1 (CV):** Address 0x60 (A0 pin → GND)
-- **DAC #2 (Gate):** Address 0x61 (A0 pin → VDD)
+Both MCP4725 DACs share the same I2C bus (SDA=18, SCL=19) but must have different addresses:
+- **DAC #1 (CV):** Address 0x60 (default on most modules)
+- **DAC #2 (Gate):** Address 0x61 (or 0x62 if 0x61 unavailable)
+
+**Note:** Standard MCP4725 breakout boards have fixed addresses. You need to purchase two modules with different addresses, or use modules with solder jumpers to change the address.
 
 ## Power Requirements
 
@@ -141,9 +143,10 @@ Both MCP4725 DACs share the same I2C bus (SDA=18, SCL=19) but use different addr
 
 ### MCP4725 not detected
 - Verify I2C connections (SDA=18, SCL=19)
-- Check A0 pin wiring (GND for 0x60, VDD for 0x61)
-- Confirm 5V power to VDD pin
-- Use I2C scanner sketch to detect addresses
+- Confirm 5V power to VCC pin
+- Check that modules have different addresses (use I2C scanner to verify)
+- Ensure you're using addresses 0x60 and 0x61 (or update config.h if different)
+- Use I2C scanner sketch to detect actual addresses on your modules
 
 ### CV output voltage too low
 - MCP4725 VDD must be 5V (not 3.3V)

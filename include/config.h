@@ -69,20 +69,23 @@
 // Both use Teensy 4.1 I2C pins (Wire): SDA=18, SCL=19
 // 
 // MCP4725 #1 (CV) Wiring:
-//   MCP4725 VDD  -> Teensy 5V (for 0-5V output range)
+//   MCP4725 VCC  -> Teensy 5V (for 0-5V output range)
 //   MCP4725 GND  -> Teensy GND
 //   MCP4725 SDA  -> Teensy Pin 18 (SDA)
 //   MCP4725 SCL  -> Teensy Pin 19 (SCL)
-//   MCP4725 A0   -> GND (sets address to 0x60)
-//   MCP4725 VOUT -> TRRS Jack "Left" pin (CV output)
+//   MCP4725 OUT  -> TRRS Jack "Left" pin (CV output)
+//   Module address: 0x60 (factory set)
 // 
 // MCP4725 #2 (Gate) Wiring:
-//   MCP4725 VDD  -> Teensy 5V
+//   MCP4725 VCC  -> Teensy 5V
 //   MCP4725 GND  -> Teensy GND
 //   MCP4725 SDA  -> Teensy Pin 18 (SDA) - shared I2C bus
 //   MCP4725 SCL  -> Teensy Pin 19 (SCL) - shared I2C bus
-//   MCP4725 A0   -> VDD (sets address to 0x61)
-//   MCP4725 VOUT -> TRRS Jack "Ring" pin (Gate output)
+//   MCP4725 OUT  -> TRRS Jack "Ring" pin (Gate output)
+//   Module address: 0x61 (factory set - purchase module with this address)
+//
+// Note: Standard MCP4725 breakout boards have fixed I2C addresses.
+//       You need two modules with different addresses (0x60 and 0x61).
 // 
 // TRRS Jack Output:
 //   Left   -> CV output (0-5V analog)

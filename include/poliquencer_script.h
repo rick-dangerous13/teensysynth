@@ -27,9 +27,9 @@ enum DirectionMode {
     DIR_RANDOM = 3     // Random walk
 };
 
-class SteampunquencerScript {
+class PoliquencerScript {
 public:
-    SteampunquencerScript();
+    PoliquencerScript();
     
     // Initialize the sequencer
     bool begin();
@@ -114,4 +114,4 @@ private:
     void updatePortamento();
 };
 
-#endif // STEAMPUNQUENCER_SCRIPT_H
+#endif // POLIQUENCER_SCRIPT_H

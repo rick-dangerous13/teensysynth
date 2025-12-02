@@ -49,14 +49,14 @@ if (currentStep != lastCurrentStep) {
 - `COLOR_DIM` (0x39E7) - Dim gray for labels
 - `COLOR_ACCENT` (0x07FF) - Cyan for active elements
 - `COLOR_HIGHLIGHT` (0xFFE0) - Yellow for selected/editing elements
-- Custom colors: Use consistent palette (e.g., SteampunQuencer uses grayscale + 0x5D9F light blue)
+- Custom colors: Use consistent palette (e.g., Poliquencer uses grayscale + 0x5D9F light blue)
 
 ## Code Organization
 
 ### Script Types
 - **Type 0**: LFO scripts - waveform generators
 - **Type 1**: Sequencer scripts - basic 8-step sequencers
-- **Type 2**: SteampunQuencer - advanced sequencer with gate modes and artistic UI
+- **Type 2**: Poliquencer - advanced sequencer with gate modes and artistic UI
 
 ### Adding New Scripts
 1. Create header in `include/` and implementation in `src/`

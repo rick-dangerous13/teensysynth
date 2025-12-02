@@ -1,18 +1,18 @@
 /**
- * SteampunQuencer Script Implementation
+ * Poliquencer Script Implementation
  * 
  * Metropolix-inspired sequencer with gate modes and direction control
- * Victorian-era industrial aesthetics meet modern eurorack sequencing
+ * Artistic sequencer with visual feedback
  */
 
-#include "steampunquencer_script.h"
+#include "poliquencer_script.h"
 #include <Wire.h>
 
 // Scale definitions (semitones from root)
-const int8_t SteampunquencerScript::majorScale[7] = {0, 2, 4, 5, 7, 9, 11};
-const int8_t SteampunquencerScript::minorScale[7] = {0, 2, 3, 5, 7, 8, 10};
+const int8_t PoliquencerScript::majorScale[7] = {0, 2, 4, 5, 7, 9, 11};
+const int8_t PoliquencerScript::minorScale[7] = {0, 2, 3, 5, 7, 8, 10};
 
-SteampunquencerScript::SteampunquencerScript()
+PoliquencerScript::PoliquencerScript()
     : dacCVInitialized(false)
     , dacGateInitialized(false)
     , currentStep(0)
@@ -31,7 +31,7 @@ SteampunquencerScript::SteampunquencerScript()
     , targetCV(2.0f)
     , slideStartMicros(0) {
     
-    // Initialize steps with interesting steampunk pattern
+    // Initialize steps with interesting pattern
     // Pattern: Root, 3rd, 5th, octave, 7th, 5th, 4th, 2nd
     int8_t pattern[8] = {0, 4, 7, 12, 10, 7, 5, 2};
     for (int i = 0; i < 8; i++) {
@@ -45,7 +45,7 @@ SteampunquencerScript::SteampunquencerScript()
     stepGateModes[5] = GATE_SKIP;
 }
 
-bool SteampunquencerScript::begin() {
+bool PoliquencerScript::begin() {
     // Initialize I2C if not already done
     Wire.begin();
     
@@ -78,7 +78,7 @@ bool SteampunquencerScript::begin() {
     return true;
 }
 
-void SteampunquencerScript::update() {
+void PoliquencerScript::update() {
     unsigned long currentMicros = micros();
     unsigned long elapsed = currentMicros - lastStepMicros;
     
@@ -142,11 +142,11 @@ void SteampunquencerScript::update() {
     }
 }
 
-void SteampunquencerScript::advanceStep() {
+void PoliquencerScript::advanceStep() {
     currentStep = getNextStep();
 }
 
-uint8_t SteampunquencerScript::getNextStep() {
+uint8_t PoliquencerScript::getNextStep() {
     uint8_t nextStep = currentStep;
     
     switch (direction) {
@@ -188,7 +188,7 @@ uint8_t SteampunquencerScript::getNextStep() {
     return nextStep;
 }
 
-void SteampunquencerScript::updatePortamento() {
+void PoliquencerScript::updatePortamento() {
     unsigned long currentMicros = micros();
     unsigned long elapsed = currentMicros - slideStartMicros;
     
@@ -204,7 +204,7 @@ void SteampunquencerScript::updatePortamento() {
     outputCV(currentCV);
 }
 
-void SteampunquencerScript::stop() {
+void PoliquencerScript::stop() {
     // Turn off outputs
     outputCV(0.0f);
     outputGate(false);
@@ -212,60 +212,60 @@ void SteampunquencerScript::stop() {
     steamTrigger = false;
 }
 
-void SteampunquencerScript::setGlobalTempo(float bpm) {
+void PoliquencerScript::setGlobalTempo(float bpm) {
     if (bpm < 20.0f) bpm = 20.0f;
     if (bpm > 300.0f) bpm = 300.0f;
     stepDurationMicros = (unsigned long)((60.0f / bpm) * 1000000.0f);
 }
 
-void SteampunquencerScript::setStepValue(uint8_t step, int8_t semitones) {
+void PoliquencerScript::setStepValue(uint8_t step, int8_t semitones) {
     if (step >= 8) return;
     if (semitones < -12) semitones = -12;
     if (semitones > 12) semitones = 12;
     stepValues[step] = semitones;
 }
 
-void SteampunquencerScript::setStepDuration(uint8_t step, uint8_t beats) {
+void PoliquencerScript::setStepDuration(uint8_t step, uint8_t beats) {
     if (step >= 8) return;
     if (beats < 1) beats = 1;
     if (beats > 8) beats = 8;
     stepDurations[step] = beats;
 }
 
-void SteampunquencerScript::setStepGateMode(uint8_t step, GateMode mode) {
+void PoliquencerScript::setStepGateMode(uint8_t step, GateMode mode) {
     if (step >= 8) return;
     stepGateModes[step] = mode;
 }
 
-void SteampunquencerScript::setRootNote(uint8_t note) {
+void PoliquencerScript::setRootNote(uint8_t note) {
     if (note < 12) {
         rootNote = note;
     }
 }
 
-void SteampunquencerScript::setScale(uint8_t scale) {
+void PoliquencerScript::setScale(uint8_t scale) {
     if (scale <= 1) {
         scaleType = scale;
     }
 }
 
-void SteampunquencerScript::setDirection(DirectionMode dir) {
+void PoliquencerScript::setDirection(DirectionMode dir) {
     direction = dir;
 }
 
-void SteampunquencerScript::setCurrentStep(uint8_t step) {
+void PoliquencerScript::setCurrentStep(uint8_t step) {
     if (step < 8) {
         currentStep = step;
     }
 }
 
-void SteampunquencerScript::setPortamentoTime(uint16_t ms) {
+void PoliquencerScript::setPortamentoTime(uint16_t ms) {
     if (ms < 10) ms = 10;
     if (ms > 500) ms = 500;
     portamentoTimeMs = ms;
 }
 
-float SteampunquencerScript::calculateCVVoltage(int8_t stepValue) {
+float PoliquencerScript::calculateCVVoltage(int8_t stepValue) {
     // Direct semitone mapping (chromatic)
     // C4 (MIDI 60) = 2V, each semitone = 1/12 V
     float voltage = 2.0f + (stepValue / 12.0f);
@@ -280,7 +280,7 @@ float SteampunquencerScript::calculateCVVoltage(int8_t stepValue) {
     return voltage;
 }
 
-uint16_t SteampunquencerScript::voltageToDACValue(float volts) {
+uint16_t PoliquencerScript::voltageToDACValue(float volts) {
     if (volts < 0.0f) volts = 0.0f;
     if (volts > DAC_MAX_VOLTAGE) volts = DAC_MAX_VOLTAGE;
     
@@ -290,14 +290,14 @@ uint16_t SteampunquencerScript::voltageToDACValue(float volts) {
     return dacValue;
 }
 
-void SteampunquencerScript::outputCV(float volts) {
+void PoliquencerScript::outputCV(float volts) {
     if (dacCVInitialized) {
         uint16_t dacValue = voltageToDACValue(volts);
         dacCV.setVoltage(dacValue, false);
     }
 }
 
-void SteampunquencerScript::outputGate(bool high) {
+void PoliquencerScript::outputGate(bool high) {
     if (dacGateInitialized) {
         float voltage = high ? GATE_HIGH_VOLTAGE : GATE_LOW_VOLTAGE;
         uint16_t dacValue = voltageToDACValue(voltage);
@@ -305,7 +305,7 @@ void SteampunquencerScript::outputGate(bool high) {
     }
 }
 
-void SteampunquencerScript::getDisplayText(char* buffer, size_t bufferSize) {
+void PoliquencerScript::getDisplayText(char* buffer, size_t bufferSize) {
     const char* noteNames[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
     const char* dirNames[] = {"FWD", "REV", "PEND", "RND"};
     

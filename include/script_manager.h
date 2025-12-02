@@ -11,7 +11,7 @@
 #include <Arduino.h>
 #include "config.h"
 #include "lfo_script.h"
-#include "steampunquencer_script.h"
+#include "poliquencer_script.h"
 
 // Script library entry
 struct ScriptLibraryEntry {
@@ -82,17 +82,17 @@ public:
     void setSequencerStepValue(uint8_t slot, uint8_t step, int8_t value);
     void setSequencerStepDuration(uint8_t slot, uint8_t step, uint8_t duration);
     
-    // Steampunk sequencer access
-    bool getSteampunkSequencerData(uint8_t slot, uint8_t* currentStep, uint8_t* currentBeat, int8_t stepValues[8], uint8_t stepDurations[8], uint8_t gateModes[8], uint8_t* direction, bool* steamTrigger);
-    void setSteampunkStepValue(uint8_t slot, uint8_t step, int8_t value);
-    void setSteampunkStepDuration(uint8_t slot, uint8_t step, uint8_t duration);
-    void setSteampunkStepGateMode(uint8_t slot, uint8_t step, uint8_t gateMode);
-    void setSteampunkDirection(uint8_t slot, uint8_t direction);
+    // Poliquencer access
+    bool getPoliquencerData(uint8_t slot, uint8_t* currentStep, uint8_t* currentBeat, int8_t stepValues[8], uint8_t stepDurations[8], uint8_t gateModes[8], uint8_t* direction, bool* steamTrigger);
+    void setPoliquencerStepValue(uint8_t slot, uint8_t step, int8_t value);
+    void setPoliquencerStepDuration(uint8_t slot, uint8_t step, uint8_t duration);
+    void setPoliquencerStepGateMode(uint8_t slot, uint8_t step, uint8_t gateMode);
+    void setPoliquencerDirection(uint8_t slot, uint8_t direction);
 
 private:
     ScriptInfo scripts[MAX_SCRIPTS];
     LFOScript* lfoInstances[MAX_SCRIPTS];  // LFO instance per slot
-    SteampunquencerScript* steampunkInstances[MAX_SCRIPTS];  // Steampunk sequencer instance per slot
+    PoliquencerScript* poliquencerInstances[MAX_SCRIPTS];  // Poliquencer instance per slot
     
     // Script library
     static const ScriptLibraryEntry scriptLibrary[];
