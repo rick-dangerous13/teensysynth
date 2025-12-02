@@ -149,27 +149,30 @@ void UI::showScriptLibraryScreen() {
     if (lastMenuSelection == -1) {
         display->clear();
         
-        char headerText[32];
-        snprintf(headerText, sizeof(headerText), "LOAD > SLOT %d", selectedScriptSlot + 1);
-        drawHeader(headerText);
+        // Title at top-left like Poliquencer
+        display->drawText(20, 5, "Select Script", COLOR_FG, FONT_SMALL);
         
         drawFooter("OK: load", "BACK: cancel");
         
-        // Draw library items (temp names, should be updated from main loop)
+        // Get actual script library items from script manager
         int16_t startY = 50;
-        const char* tempItems[] = {"LFO", "Poliquencer", "Envelope", "Clock"};
-        for (int i = 0; i < menuItemCount && i < 4; i++) {
-            drawMenuItem(startY + i * MENU_ITEM_H, tempItems[i], i == menuSelection);
+        for (int i = 0; i < menuItemCount; i++) {
+            // Get library entry from script manager (needs to be passed in, use temp for now)
+            const char* scriptNames[] = {"Poliquencer", "LFO", "Envelope", "Clock"};
+            const char* name = (i < 4) ? scriptNames[i] : "Unknown";
+            drawMenuItem(startY + i * MENU_ITEM_H, name, i == menuSelection);
         }
     } else if (lastMenuSelection != menuSelection) {
         // Only redraw the changed menu items
         int16_t startY = 50;
-        const char* tempItems[] = {"LFO", "Poliquencer", "Envelope", "Clock"};
+        const char* scriptNames[] = {"Poliquencer", "LFO", "Envelope", "Clock"};
         if (lastMenuSelection < 4) {
-            drawMenuItem(startY + lastMenuSelection * MENU_ITEM_H, tempItems[lastMenuSelection], false);
+            const char* name = scriptNames[lastMenuSelection];
+            drawMenuItem(startY + lastMenuSelection * MENU_ITEM_H, name, false);
         }
-        if (menuSelection < 5) {
-            drawMenuItem(startY + menuSelection * MENU_ITEM_H, tempItems[menuSelection], true);
+        if (menuSelection < 4) {
+            const char* name = scriptNames[menuSelection];
+            drawMenuItem(startY + menuSelection * MENU_ITEM_H, name, true);
         }
     }
     
@@ -213,13 +216,14 @@ void UI::showSettingsScreen() {
     const char* settings[] = {
         clockLabel,
         multitaskLabel,
+        "Input Test",
         "Audio Output",
         "MIDI Channel",
         "Display Brightness",
         "Script Auto-load"
     };
     
-    menuItemCount = 6;
+    menuItemCount = 7;
     
     // Only do full redraw if this is initial display
     if (lastMenuSelection == -1) {
@@ -590,6 +594,32 @@ void UI::drawScriptSlot(uint8_t slot, bool selected) {
             int16_t contentY = y + 25;
             int16_t contentH = h - 30;
             drawPoliquencerSequencer(slot, x, contentY, w, contentH);
+        } else if (scriptSlots[slot].scriptType == 3) {
+            // Touch Calibration Test - show targets
+            display->fillRect(x + 6, y + 25, w - 12, h - 30, COLOR_BG);
+            
+            // Draw title
+            display->drawText(x + 8, y + 40, "Touch Calibration", COLOR_ACCENT, FONT_MEDIUM);
+            display->drawText(x + 8, y + 65, "Touch each corner", COLOR_FG, FONT_SMALL);
+            display->drawText(x + 8, y + 80, "and center. Watch", COLOR_FG, FONT_SMALL);
+            display->drawText(x + 8, y + 95, "Serial for coords", COLOR_FG, FONT_SMALL);
+            
+            // Draw calibration targets (crosshairs)
+            // Top-left
+            display->drawLine(5, 5, 15, 5, COLOR_ACCENT);
+            display->drawLine(10, 0, 10, 10, COLOR_ACCENT);
+            // Top-right
+            display->drawLine(SCREEN_WIDTH - 15, 5, SCREEN_WIDTH - 5, 5, COLOR_ACCENT);
+            display->drawLine(SCREEN_WIDTH - 10, 0, SCREEN_WIDTH - 10, 10, COLOR_ACCENT);
+            // Bottom-left
+            display->drawLine(5, SCREEN_HEIGHT - 5, 15, SCREEN_HEIGHT - 5, COLOR_ACCENT);
+            display->drawLine(10, SCREEN_HEIGHT - 10, 10, SCREEN_HEIGHT, COLOR_ACCENT);
+            // Bottom-right
+            display->drawLine(SCREEN_WIDTH - 15, SCREEN_HEIGHT - 5, SCREEN_WIDTH - 5, SCREEN_HEIGHT - 5, COLOR_ACCENT);
+            display->drawLine(SCREEN_WIDTH - 10, SCREEN_HEIGHT - 10, SCREEN_WIDTH - 10, SCREEN_HEIGHT, COLOR_ACCENT);
+            // Center
+            display->drawLine(SCREEN_WIDTH/2 - 10, SCREEN_HEIGHT/2, SCREEN_WIDTH/2 + 10, SCREEN_HEIGHT/2, COLOR_HIGHLIGHT);
+            display->drawLine(SCREEN_WIDTH/2, SCREEN_HEIGHT/2 - 10, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 10, COLOR_HIGHLIGHT);
         } else {
             // Unknown script type - show error
             display->fillRect(x + 6, y + 25, w - 12, h - 30, COLOR_BG);
@@ -870,6 +900,19 @@ void UI::updateScriptSequencer(uint8_t slot, uint8_t currentStep, int8_t stepVal
         for (int i = 0; i < 8; i++) {
             scriptSlots[slot].seqStepDurations[i] = stepDurations[i];
         }
+    }
+}
+
+void UI::setSequencerEditStep(uint8_t slot, uint8_t step) {
+    if (slot < MAX_SCRIPTS && step < 8) {
+        scriptSlots[slot].seqEditStep = step;
+    }
+}
+
+void UI::setSequencerEditMode(uint8_t slot, uint8_t mode) {
+    if (slot < MAX_SCRIPTS && mode < 3) {
+        scriptSlots[slot].seqEditMode = mode;
+        scriptSlots[slot].seqEditingDuration = (mode == 2);
     }
 }
 

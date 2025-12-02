@@ -8,6 +8,7 @@
 #define INPUT_H
 
 #include <Arduino.h>
+#include <XPT2046_Touchscreen.h>
 #include "config.h"
 
 class InputHandler {
@@ -26,6 +27,13 @@ public:
     int16_t getEncoderDelta();     // Returns rotation delta since last call (-n, 0, +n)
     bool isEncoderPressed();       // Encoder switch pressed
     bool isEncoderReleased();      // Encoder switch released
+    
+    // Touch queries
+    bool isTouched();              // Is screen currently touched?
+    bool wasTouched();             // Was screen touched since last check?
+    void getTouchPoint(int16_t* x, int16_t* y);  // Get current touch coordinates
+    TS_Point getRawTouchPoint();   // Get raw touch coordinates for calibration
+    void clearTouch();             // Clear touch state
     
 private:
     // Button states (OK and Back buttons)
@@ -51,11 +59,23 @@ private:
     unsigned long lastEncoderTime;
     unsigned long lastStepTime;    // Track time of last menu step
     
+    // Touch state
+    XPT2046_Touchscreen* touchScreen;
+    bool touchActive;
+    bool lastTouchActive;
+    bool touchPressed;
+    int16_t touchX;
+    int16_t touchY;
+    unsigned long lastTouchTime;
+    
     // Helper methods
     uint8_t getButtonIndex(uint8_t button);
     void updateButton(uint8_t index, uint8_t pin);
     void updateEncoder();
     void updateEncoderSwitch();
+    void updateTouch();
+    int16_t mapTouchX(int16_t rawX);
+    int16_t mapTouchY(int16_t rawY);
 };
 
 #endif // INPUT_H

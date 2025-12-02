@@ -90,6 +90,7 @@ public:
     void updateScriptSequencer(uint8_t slot, uint8_t currentStep, int8_t stepValues[8], uint8_t stepDurations[8]);  // Update sequencer display
     void updateScriptDisplay(uint8_t slot, const char* output);
     void setScriptType(uint8_t slot, uint8_t type);  // Set script type for proper visualization
+    uint8_t getScriptType(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].scriptType : 0; }
     
     // Settings control
     void toggleSettingValue();
@@ -106,6 +107,8 @@ public:
     uint8_t getSequencerEditStep(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].seqEditStep : 0; }
     bool isEditingDuration(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].seqEditingDuration : false; }
     uint8_t getSequencerEditMode(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].seqEditMode : 0; }
+    void setSequencerEditStep(uint8_t slot, uint8_t step);
+    void setSequencerEditMode(uint8_t slot, uint8_t mode);
     void advanceSequencerEditStep(uint8_t slot);
     void toggleSequencerEditMode(uint8_t slot);  // Toggle between pitch and duration editing
     void adjustSequencerStepValue(uint8_t slot, int8_t delta);

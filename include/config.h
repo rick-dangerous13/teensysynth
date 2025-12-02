@@ -59,6 +59,28 @@
 #define ENC_DEBOUNCE_MS      2    // Debounce time for encoder transitions
 
 // ============================================================================
+// Touchscreen Configuration (XPT2046)
+// ============================================================================
+#define TOUCH_CS      7    // Touch chip select
+// TOUCH_IRQ not connected - using polling mode
+
+// Touch calibration values (adjust based on your display orientation)
+// For rotation(3) landscape mode with USB on right
+// Based on calibration: Left=3500, Right=280, Top=3560, Bottom=320
+// Swapped MIN/MAX to invert mapping (raw decreases left-to-right, top-to-bottom)
+#define TS_MINX       3500   // Left edge (high raw value)
+#define TS_MINY       3560   // Top edge (high raw value)
+#define TS_MAXX       280    // Right edge (low raw value)
+#define TS_MAXY       320    // Bottom edge (low raw value)
+
+// Touch pins:
+//   T_IRQ  -> Not connected (or Pin 255 for polling mode)
+//   T_DO   -> Pin 12 (MISO - shared with display)
+//   T_DIN  -> Pin 11 (MOSI - shared with display)
+//   T_CS   -> Pin 7 (dedicated)
+//   T_CLK  -> Pin 13 (SCK - shared with display)
+
+// ============================================================================
 // MCP4725 DAC Configuration (Eurorack CV/Gate Output)
 // ============================================================================
 // CV Output DAC (Address 0x60)

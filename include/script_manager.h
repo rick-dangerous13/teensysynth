@@ -12,6 +12,7 @@
 #include "config.h"
 #include "lfo_script.h"
 #include "poliquencer_script.h"
+#include "touch_test_script.h"
 
 // Script library entry
 struct ScriptLibraryEntry {
@@ -93,6 +94,7 @@ private:
     ScriptInfo scripts[MAX_SCRIPTS];
     LFOScript* lfoInstances[MAX_SCRIPTS];  // LFO instance per slot
     PoliquencerScript* poliquencerInstances[MAX_SCRIPTS];  // Poliquencer instance per slot
+    TouchTestScript* touchTestInstances[MAX_SCRIPTS];  // Touch test instance per slot
     
     // Script library
     static const ScriptLibraryEntry scriptLibrary[];

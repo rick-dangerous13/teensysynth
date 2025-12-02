@@ -41,6 +41,7 @@ enum class AppState {
 };
 
 AppState currentState = AppState::WELCOME;
+AppState previousState = AppState::MAIN_MENU;
 unsigned long welcomeStartTime = 0;
 const unsigned long WELCOME_DURATION = 2000; // 2 seconds
 
@@ -51,6 +52,12 @@ void handleScriptSelectState();
 void handleScriptLibraryState();
 void handleScriptRunningState();
 void handleSettingsState();
+
+// Helper to change state and track history
+void changeState(AppState newState) {
+    previousState = currentState;
+    currentState = newState;
+}
 
 void setup() {
     // Initialize serial for debugging
@@ -134,13 +141,13 @@ void handleMainMenuState() {
         int selection = ui.getSelectedMenuItem();
         switch (selection) {
             case 0: // Scripts
-                currentState = AppState::SCRIPT_LIBRARY;
+                changeState(AppState::SCRIPT_LIBRARY);
                 ui.resetMenuTracking();  // Reset for new screen
                 ui.setMenuItemCount(scriptManager.getScriptLibraryCount());
                 ui.showScriptLibraryScreen();
                 break;
             case 1: // Settings
-                currentState = AppState::SETTINGS;
+                changeState(AppState::SETTINGS);
                 ui.resetMenuTracking();  // Reset for new screen
                 ui.showSettingsScreen();
                 break;
@@ -153,6 +160,72 @@ void handleMainMenuState() {
 
 void handleScriptSelectState() {
     static unsigned long lastRefresh = 0;
+    
+    // Check if touch test is running in slot 0
+    bool isTouchTest = (ui.getScriptType(0) == 3);
+    
+    // Log all input events for touch test mode
+    if (isTouchTest) {
+        static bool lastOK = false;
+        static bool lastBack = false;
+        static int lastEncoderPos = 0;
+        static bool lastTouch = false;
+        
+        // Check OK button
+        if (input.isButtonPressed(BTN_OK) && !lastOK) {
+            Serial.println(">>> OK BUTTON PRESSED");
+            lastOK = true;
+        } else if (!input.isButtonPressed(BTN_OK)) {
+            lastOK = false;
+        }
+        
+        // Check Back button
+        if (input.isButtonPressed(BTN_BACK) && !lastBack) {
+            Serial.println(">>> BACK BUTTON PRESSED");
+            lastBack = true;
+        } else if (!input.isButtonPressed(BTN_BACK)) {
+            lastBack = false;
+        }
+        
+        // Check encoder
+        int delta = input.getEncoderDelta();
+        if (delta != 0) {
+            lastEncoderPos += delta;
+            Serial.print(">>> ENCODER: delta=");
+            Serial.print(delta);
+            Serial.print(" position=");
+            Serial.println(lastEncoderPos);
+        }
+        
+        // Check touch - show BOTH raw and mapped coordinates for calibration
+        if (input.wasTouched()) {
+            int16_t tx, ty;
+            input.getTouchPoint(&tx, &ty);
+            
+            // Get raw coordinates directly from touch controller for calibration
+            if (input.isTouched()) {
+                TS_Point rawPoint = input.getRawTouchPoint();
+                Serial.print(">>> RAW TOUCH: x=");
+                Serial.print(rawPoint.x);
+                Serial.print(" y=");
+                Serial.print(rawPoint.y);
+                Serial.print(" z=");
+                Serial.print(rawPoint.z);
+                Serial.print(" | MAPPED: x=");
+                Serial.print(tx);
+                Serial.print(" y=");
+                Serial.println(ty);
+            }
+            input.clearTouch();
+        }
+        
+        if (input.isTouched() && !lastTouch) {
+            Serial.println(">>> TOUCH ACTIVE (held)");
+            lastTouch = true;
+        } else if (!input.isTouched()) {
+            lastTouch = false;
+        }
+    }
     
     // Update script outputs periodically
     if (millis() - lastRefresh > 50) {  // Refresh every 50ms for smooth animation
@@ -264,6 +337,55 @@ void handleScriptSelectState() {
         }
     }
     
+    // Handle touch input for Poliquencer
+    if (input.wasTouched() && scriptManager.isScriptRunning(0)) {
+        int16_t touchX, touchY;
+        input.getTouchPoint(&touchX, &touchY);
+        
+        uint8_t dummy;
+        int8_t dummySteps[8];
+        uint8_t dummyDurations[8];
+        uint8_t dummyGateModes[8];
+        uint8_t dummyDirection;
+        bool dummySteam;
+        
+        // Check if Poliquencer is running
+        if (scriptManager.getPoliquencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam)) {
+            // Poliquencer layout: levers at top, switches middle, cranks bottom
+            // Each control is about 35px wide, 8 controls across 280px width
+            int16_t controlWidth = 35;
+            int16_t startX = 20;  // Left margin
+            
+            // Determine which step was touched (0-7)
+            if (touchX >= startX && touchX < startX + 8 * controlWidth) {
+                uint8_t step = (touchX - startX) / controlWidth;
+                if (step > 7) step = 7;
+                
+                // Determine which control type based on Y position
+                if (touchY >= 80 && touchY < 155) {
+                    // Levers area (top third)
+                    ui.setSequencerEditStep(0, step);
+                    ui.setSequencerEditMode(0, 0);  // Lever mode
+                } else if (touchY >= 155 && touchY < 190) {
+                    // Switches area (middle)
+                    ui.setSequencerEditStep(0, step);
+                    ui.setSequencerEditMode(0, 1);  // Switch mode
+                    // Toggle switch state
+                    scriptManager.getPoliquencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam);
+                    uint8_t newMode = (dummyGateModes[step] + 1) % 3;
+                    ui.adjustStepGateMode(0, 1);
+                    scriptManager.setPoliquencerStepGateMode(0, step, newMode);
+                } else if (touchY >= 190 && touchY < 235) {
+                    // Cranks area (bottom third)
+                    ui.setSequencerEditStep(0, step);
+                    ui.setSequencerEditMode(0, 2);  // Crank mode
+                }
+            }
+        }
+        
+        input.clearTouch();
+    }
+    
     // Handle OK button - cycle edit parameter for LFO, advance step for sequencer, or go to library
     if (input.isButtonPressed(BTN_OK)) {
         if (scriptManager.isScriptRunning(0)) {
@@ -305,13 +427,27 @@ void handleScriptSelectState() {
         ui.showScriptLibraryScreen();
     }
     
-    // Handle Back button
+    // Handle Back button - go back to where we came from
     if (input.isButtonPressed(BTN_BACK)) {
-        // Go to script library to change script
-        currentState = AppState::SCRIPT_LIBRARY;
+        AppState destination = previousState;
+        currentState = destination;
+        // When going back to script library, set previous to main menu for next back press
+        if (destination == AppState::SCRIPT_LIBRARY) {
+            previousState = AppState::MAIN_MENU;
+        } else if (destination == AppState::SETTINGS) {
+            previousState = AppState::MAIN_MENU;
+        }
         ui.resetMenuTracking();
-        ui.setMenuItemCount(scriptManager.getScriptLibraryCount());
-        ui.showScriptLibraryScreen();
+        
+        // Show appropriate screen based on where we're going
+        if (destination == AppState::MAIN_MENU) {
+            ui.showMainMenu();
+        } else if (destination == AppState::SETTINGS) {
+            ui.showSettingsScreen();
+        } else if (destination == AppState::SCRIPT_LIBRARY) {
+            ui.setMenuItemCount(scriptManager.getScriptLibraryCount());
+            ui.showScriptLibraryScreen();
+        }
     }
 }
 
@@ -357,7 +493,7 @@ void handleScriptLibraryState() {
             }
             
             // Go back to script select screen
-            currentState = AppState::SCRIPT_SELECT;
+            changeState(AppState::SCRIPT_SELECT);
             ui.resetMenuTracking();
             ui.showScriptSelectScreen();
         } else {
@@ -365,19 +501,11 @@ void handleScriptLibraryState() {
         }
     }
     
-    // Handle Back button - cancel and go back
+    // Handle Back button - always go back to main menu
     if (input.isButtonPressed(BTN_BACK)) {
-        if (scriptManager.isScriptRunning(0)) {
-            // If script running, go back to viewing it
-            currentState = AppState::SCRIPT_SELECT;
-            ui.resetMenuTracking();
-            ui.showScriptSelectScreen();
-        } else {
-            // No script running, go back to main menu
-            currentState = AppState::MAIN_MENU;
-            ui.resetMenuTracking();
-            ui.showMainMenu();
-        }
+        changeState(AppState::MAIN_MENU);
+        ui.resetMenuTracking();
+        ui.showMainMenu();
     }
 }
 
@@ -399,20 +527,22 @@ void handleScriptRunningState() {
 }
 
 void handleSettingsState() {
+    static bool editMode = false;
     int selectedSetting = ui.getSelectedMenuItem();
     
     // Handle encoder
     int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
-        // If clock is selected (item 0), adjust tempo
-        if (selectedSetting == 0) {
+        if (editMode && selectedSetting == 0) {
+            // Editing clock tempo
             float currentTempo = ui.getClockTempo();
             float newTempo = currentTempo + (scrollDelta * 5.0f);  // 5 BPM increments
             ui.setClockTempo(newTempo);
             scriptManager.setGlobalTempo(newTempo);
-            ui.showSettingsScreen();  // Refresh display
+            ui.resetMenuTracking();  // Force full redraw to show new tempo
+            ui.showSettingsScreen();
         } else {
-            // Navigate between settings for other items
+            // Navigate between settings
             ui.scrollMenu(scrollDelta);
             ui.showSettingsScreen();  // Partial redraw
         }
@@ -420,12 +550,30 @@ void handleSettingsState() {
     
     // Handle OK button
     if (input.isButtonPressed(BTN_OK)) {
-        ui.toggleSettingValue();
+        // If Input Test is selected (item 2), launch it immediately
+        if (selectedSetting == 2) {
+            // Load touch test into slot 0
+            if (scriptManager.loadScriptFromLibrary(0, 100)) {  // Use 100 as special index for input test
+                ui.updateScriptStatus(0, true);
+                ui.updateScriptInfo(0, "Input Test");
+                ui.setScriptType(0, 3);  // Type 3 = input test
+                changeState(AppState::SCRIPT_SELECT);
+                ui.resetMenuTracking();
+                ui.showScriptSelectScreen();
+                editMode = false;  // Reset edit mode
+            }
+        } else if (selectedSetting == 0) {
+            // Toggle edit mode for clock tempo
+            editMode = !editMode;
+        } else {
+            // Toggle other settings
+            ui.toggleSettingValue();
+        }
     }
     
     // Handle Back button
     if (input.isButtonPressed(BTN_BACK)) {
-        currentState = AppState::MAIN_MENU;
+        changeState(AppState::MAIN_MENU);
         ui.resetMenuTracking();  // Reset for new screen
         ui.showMainMenu();
     }

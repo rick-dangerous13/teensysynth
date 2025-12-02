@@ -14,8 +14,8 @@
 
 // Script library definition
 const ScriptLibraryEntry ScriptManager::scriptLibrary[] = {
-    {"LFO", "Low Frequency Oscillator", 0},
     {"Poliquencer", "Metropolix-style Artistic Sequencer", 2},
+    {"LFO", "Low Frequency Oscillator", 0},
     {"Envelope", "ADSR Envelope (Coming Soon)", 3},
     {"Clock", "Clock Divider (Coming Soon)", 4}
 };
@@ -31,6 +31,7 @@ ScriptManager::ScriptManager() : lastUpdateTime(0) {
         strcpy(scripts[i].output, "");
         lfoInstances[i] = nullptr;
         poliquencerInstances[i] = nullptr;
+        touchTestInstances[i] = nullptr;
     }
 }
 
@@ -221,6 +222,29 @@ bool ScriptManager::loadScriptFromLibrary(uint8_t slot, uint8_t libraryIndex) {
     Serial.print(", libraryIndex=");
     Serial.println(libraryIndex);
     
+    // Check for special Input Test index (100)
+    if (libraryIndex == 100) {
+        if (slot >= MAX_SCRIPTS) return false;
+        
+        // Unload any existing script
+        if (scripts[slot].state != ScriptState::EMPTY) {
+            Serial.println("Unloading existing script");
+            unloadScript(slot);
+        }
+        
+        Serial.println("Creating touch test instance...");
+        touchTestInstances[slot] = new TouchTestScript();
+        touchTestInstances[slot]->start();
+        
+        strcpy(scripts[slot].name, "Input Test");
+        strcpy(scripts[slot].path, "builtin://inputtest");
+        scripts[slot].state = ScriptState::RUNNING;
+        
+        Serial.print("Loaded Input Test in slot ");
+        Serial.println(slot);
+        return true;
+    }
+    
     if (slot >= MAX_SCRIPTS || libraryIndex >= scriptLibraryCount) {
         Serial.println("ERROR: Invalid slot or library index");
         Serial.print("  MAX_SCRIPTS=");
@@ -288,7 +312,7 @@ bool ScriptManager::loadScriptFromLibrary(uint8_t slot, uint8_t libraryIndex) {
         strcpy(scripts[slot].path, "builtin://poliquencer");
         scripts[slot].state = ScriptState::RUNNING;
         
-        Serial.print("Loaded SteampunQuencer in slot ");
+        Serial.print("Loaded Poliquencer in slot ");
         Serial.println(slot);
         return true;
     }
@@ -338,6 +362,13 @@ void ScriptManager::executeScriptFrame(uint8_t slot) {
         
         // Update display output
         poliquencerInstances[slot]->getDisplayText(scripts[slot].output, sizeof(scripts[slot].output));
+        return;
+    }
+    
+    // Update touch test if this slot has one
+    if (touchTestInstances[slot] != nullptr) {
+        touchTestInstances[slot]->update();
+        strcpy(scripts[slot].output, "Testing inputs...");
         return;
     }
     

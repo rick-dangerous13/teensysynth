@@ -16,25 +16,36 @@
 | 11 | Display | TFT_MOSI | SPI Data |
 | 12 | Display | TFT_MISO | SPI Data |
 | 13 | Display | TFT_SCLK | SPI Clock |
+| 7 | Touch | T_CS | XPT2046 Chip Select |
+| 11 | Touch | T_DIN | Shared with TFT MOSI |
+| 12 | Touch | T_DO | Shared with TFT MISO |
+| 13 | Touch | T_CLK | Shared with TFT SCLK |
 | 18 | I2C | SDA | Shared for both DACs |
 | 19 | I2C | SCL | Shared for both DACs |
 
 ## Component Wiring Details
 
-### 1. ILI9341 2.8" TFT Display
+### 1. ILI9341 2.8" TFT Display with XPT2046 Touch
 ```
-Display Pin    Teensy 4.1
------------    ----------
-VCC     →      3.3V
-GND     →      GND
-CS      →      Pin 10
-RESET   →      Pin 8
-DC      →      Pin 9
-SDI/MOSI→      Pin 11
-SCK     →      Pin 13
-LED     →      3.3V (backlight)
-SDO/MISO→      Pin 12
+Display Pin    Teensy 4.1    Notes
+-----------    ----------    -----
+VCC     →      3.3V          Display power
+GND     →      GND           Ground
+CS      →      Pin 10        Display chip select
+RESET   →      Pin 8         Display reset
+DC      →      Pin 9         Display data/command
+SDI/MOSI→      Pin 11        SPI data (shared with touch)
+SCK     →      Pin 13        SPI clock (shared with touch)
+LED     →      3.3V          Backlight power
+SDO/MISO→      Pin 12        SPI data (shared with touch)
+T_CLK   →      Pin 13        Touch clock (shared with display)
+T_CS    →      Pin 7         Touch chip select
+T_DIN   →      Pin 11        Touch data in (shared with display MOSI)
+T_DO    →      Pin 12        Touch data out (shared with display MISO)
+T_IRQ   →      Not connected Touch uses polling mode
 ```
+
+**Note:** The touch controller (XPT2046) shares the SPI bus with the display but has its own chip select (Pin 7).
 
 ### 2. DEBO Rotary Encoder
 ```

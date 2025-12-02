@@ -6,7 +6,7 @@
 
 #include "input.h"
 
-InputHandler::InputHandler() {
+InputHandler::InputHandler() : touchScreen(nullptr) {
     // Initialize all states to default
     for (int i = 0; i < 2; i++) {
         buttonState[i] = false;
@@ -31,6 +31,14 @@ InputHandler::InputHandler() {
     encoderSwitchPressed = false;
     encoderSwitchReleased = false;
     encoderSwitchDebounceTime = 0;
+    
+    // Initialize touch states
+    touchActive = false;
+    lastTouchActive = false;
+    touchPressed = false;
+    touchX = 0;
+    touchY = 0;
+    lastTouchTime = 0;
 }
 
 void InputHandler::begin() {
@@ -42,6 +50,25 @@ void InputHandler::begin() {
     pinMode(ENC_CLK, INPUT_PULLUP);
     pinMode(ENC_DT, INPUT_PULLUP);
     pinMode(ENC_SW, INPUT_PULLUP);
+    
+    // Initialize touchscreen (polling mode - no IRQ pin)
+    Serial.println("Initializing touch screen...");
+    
+    // Configure CS pin as output and set high (inactive)
+    pinMode(TOUCH_CS, OUTPUT);
+    digitalWrite(TOUCH_CS, HIGH);
+    delay(10);
+    
+    touchScreen = new XPT2046_Touchscreen(TOUCH_CS);
+    if (touchScreen) {
+        touchScreen->begin();
+        touchScreen->setRotation(3);  // Match display rotation
+        Serial.println("Touch screen initialized successfully");
+    } else {
+        Serial.println("ERROR: Failed to create touch screen object");
+    }
+    
+    Serial.println("Touch initialized");
     
     // Read initial encoder state (2-bit value from both pins)
     uint8_t s = 0;
@@ -58,6 +85,7 @@ void InputHandler::update() {
         buttonReleased[i] = false;
     }
     encoderSwitchPressed = false;
+    touchPressed = false;
     encoderSwitchReleased = false;
     
     // Update buttons
@@ -67,6 +95,9 @@ void InputHandler::update() {
     // Update encoder
     updateEncoder();
     updateEncoderSwitch();
+    
+    // Update touch
+    updateTouch();
 }
 
 void InputHandler::updateButton(uint8_t index, uint8_t pin) {
@@ -217,4 +248,69 @@ uint8_t InputHandler::getButtonIndex(uint8_t button) {
         case BTN_BACK: return 1;
         default:       return 255;  // Invalid
     }
+}
+
+// ============================================================================
+// Touch Input Methods
+// ============================================================================
+
+void InputHandler::updateTouch() {
+    if (!touchScreen) return;
+    
+    lastTouchActive = touchActive;
+    touchActive = touchScreen->touched();
+    
+    if (touchActive) {
+        TS_Point p = touchScreen->getPoint();
+        
+        // Map raw touch coordinates to screen coordinates
+        touchX = mapTouchX(p.x);
+        touchY = mapTouchY(p.y);
+        
+        // Detect new touch (press event)
+        if (!lastTouchActive) {
+            touchPressed = true;
+            lastTouchTime = millis();
+        }
+    }
+}
+
+int16_t InputHandler::mapTouchX(int16_t rawX) {
+    // Map raw touch X to screen X (0-320) based on rotation
+    // Rotation 3 (landscape, USB right): map to width
+    return map(rawX, TS_MINX, TS_MAXX, 0, SCREEN_WIDTH);
+}
+
+int16_t InputHandler::mapTouchY(int16_t rawY) {
+    // Map raw touch Y to screen Y (0-240) based on rotation
+    // Rotation 3 (landscape, USB right): map to height
+    return map(rawY, TS_MINY, TS_MAXY, 0, SCREEN_HEIGHT);
+}
+
+bool InputHandler::isTouched() {
+    return touchActive;
+}
+
+bool InputHandler::wasTouched() {
+    return touchPressed;
+}
+
+void InputHandler::getTouchPoint(int16_t* x, int16_t* y) {
+    if (x) *x = touchX;
+    if (y) *y = touchY;
+}
+
+TS_Point InputHandler::getRawTouchPoint() {
+    if (touchScreen && touchActive) {
+        return touchScreen->getPoint();
+    }
+    TS_Point p;
+    p.x = 0;
+    p.y = 0;
+    p.z = 0;
+    return p;
+}
+
+void InputHandler::clearTouch() {
+    touchPressed = false;
 }
