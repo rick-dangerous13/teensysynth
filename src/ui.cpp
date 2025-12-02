@@ -43,6 +43,7 @@ UI::UI() : display(nullptr), clockTempo(DEFAULT_CLOCK_BPM), multitaskingMode(fal
             scriptSlots[i].seqStepValues[j] = 0;
             scriptSlots[i].seqStepDurations[j] = 1;
             scriptSlots[i].seqGateModes[j] = 0;
+            scriptSlots[i].seqToggleDirection[j] = 0;  // Start going toward up
             scriptSlots[i].lastSeqStepValues[j] = 0;
             scriptSlots[i].lastSeqStepDurations[j] = 1;
             scriptSlots[i].lastSeqGateModes[j] = 0;
@@ -85,33 +86,96 @@ void UI::showWelcomeScreen() {
 void UI::showMainMenu() {
     if (!display) return;
     
-    // Set up menu items
-    menuItems[0].label = "SCRIPTS";
-    menuItems[0].enabled = true;
-    menuItems[1].label = "SETTINGS";
-    menuItems[1].enabled = true;
-    menuItems[2].label = "ABOUT";
-    menuItems[2].enabled = true;
-    menuItemCount = 3;
+    menuItemCount = 3;  // Scripts, Settings, About (4th quadrant empty for future)
     
-    // Only do full redraw if this is initial display
-    if (lastMenuSelection == -1) {
+    // Only do full redraw if this is initial display or selection changed
+    if (lastMenuSelection == -1 || lastMenuSelection != menuSelection) {
         display->clear();
-        drawHeader("POLYPHONION");
-        drawFooter("OK: select", "");
         
-        // Draw all menu items
-        int16_t startY = 50;
-        for (int i = 0; i < menuItemCount; i++) {
-            drawMenuItem(startY + i * MENU_ITEM_H, menuItems[i].label, i == menuSelection);
+        // Draw title at top
+        display->drawText(20, 5, "Main Menu", COLOR_FG, FONT_SMALL);
+        
+        // Draw 4 quadrants
+        int16_t halfW = SCREEN_WIDTH / 2;
+        int16_t halfH = SCREEN_HEIGHT / 2;
+        
+        // Draw dividing lines
+        display->drawLine(halfW, 0, halfW, SCREEN_HEIGHT, COLOR_DIM);  // Vertical center line
+        display->drawLine(0, halfH, SCREEN_WIDTH, halfH, COLOR_DIM);  // Horizontal center line
+        
+        // Quadrant positions
+        struct {
+            int16_t x, y;
+            const char* label;
+            bool hasIcon;
+        } quadrants[4] = {
+            {halfW / 2, halfH / 2 - 10, "Scripts", true},    // Top-left
+            {halfW + halfW / 2, halfH / 2 - 10, "Settings", true},  // Top-right
+            {halfW / 2, halfH + halfH / 2 - 10, "About", true},     // Bottom-left
+            {halfW + halfW / 2, halfH + halfH / 2 - 10, "", false}  // Bottom-right (empty)
+        };
+        
+        for (int i = 0; i < 4; i++) {
+            uint16_t color = (i == menuSelection) ? COLOR_ACCENT : COLOR_FG;
+            uint16_t bgColor = (i == menuSelection) ? COLOR_DIM : COLOR_BG;
+            
+            if (quadrants[i].hasIcon) {
+                int16_t iconCenterX = quadrants[i].x;
+                int16_t iconCenterY = quadrants[i].y;
+                
+                // Draw icon based on quadrant (50% larger)
+                if (i == 0) {
+                    // Scripts - Code icon </> (larger)
+                    display->drawText(iconCenterX - 22, iconCenterY - 10, "</", color, FONT_LARGE);
+                    display->drawText(iconCenterX + 8, iconCenterY - 10, ">", color, FONT_LARGE);
+                    display->drawText(iconCenterX - 21, iconCenterY - 9, "</", color, FONT_LARGE);
+                    display->drawText(iconCenterX + 9, iconCenterY - 9, ">", color, FONT_LARGE);
+                } else if (i == 1) {
+                    // Settings - Cogwheel (improved design, 50% larger)
+                    int16_t outerR = 30;
+                    int16_t innerR = 18;
+                    int16_t teethR = 8;
+                    int16_t teethW = 6;
+                    
+                    // Draw 8 rectangular teeth around the circle
+                    for (int t = 0; t < 8; t++) {
+                        float angle = (t * 45.0f) * PI / 180.0f;
+                        float perpAngle = angle + PI / 2.0f;
+                        
+                        // Calculate tooth rectangle corners
+                        int16_t centerX = iconCenterX + (int16_t)(cos(angle) * (innerR + teethR / 2));
+                        int16_t centerY = iconCenterY + (int16_t)(sin(angle) * (innerR + teethR / 2));
+                        
+                        // Draw tooth as filled rectangle
+                        for (int w = -teethW / 2; w <= teethW / 2; w++) {
+                            int16_t x1 = centerX + (int16_t)(cos(perpAngle) * w);
+                            int16_t y1 = centerY + (int16_t)(sin(perpAngle) * w);
+                            int16_t x2 = x1 + (int16_t)(cos(angle) * teethR);
+                            int16_t y2 = y1 + (int16_t)(sin(angle) * teethR);
+                            display->drawLine(x1, y1, x2, y2, color);
+                        }
+                    }
+                    
+                    // Draw outer and inner circles
+                    display->drawCircle(iconCenterX, iconCenterY, innerR, color);
+                    display->drawCircle(iconCenterX, iconCenterY, innerR + 1, color);
+                    display->fillCircle(iconCenterX, iconCenterY, 8, bgColor);
+                    display->drawCircle(iconCenterX, iconCenterY, 8, color);
+                    display->drawCircle(iconCenterX, iconCenterY, 7, color);
+                } else if (i == 2) {
+                    // About - Question mark (50% larger)
+                    display->drawCircle(iconCenterX, iconCenterY - 8, 22, color);
+                    display->drawCircle(iconCenterX, iconCenterY - 8, 23, color);
+                    display->fillCircle(iconCenterX, iconCenterY - 8, 15, bgColor);
+                    display->drawText(iconCenterX - 7, iconCenterY - 22, "?", color, FONT_LARGE);
+                    display->drawText(iconCenterX - 6, iconCenterY - 21, "?", color, FONT_LARGE);
+                }
+                
+                // Draw label underneath
+                int16_t textW = strlen(quadrants[i].label) * 6;  // Approximate width for FONT_SMALL
+                display->drawText(iconCenterX - textW / 2, iconCenterY + 40, quadrants[i].label, color, FONT_SMALL);
+            }
         }
-        display->drawScrollIndicator(50, menuItemCount, 6, menuSelection);
-    } else if (lastMenuSelection != menuSelection) {
-        // Only redraw the changed menu items
-        int16_t startY = 50;
-        drawMenuItem(startY + lastMenuSelection * MENU_ITEM_H, menuItems[lastMenuSelection].label, false);
-        drawMenuItem(startY + menuSelection * MENU_ITEM_H, menuItems[menuSelection].label, true);
-        display->drawScrollIndicator(50, menuItemCount, 6, menuSelection);
     }
     
     lastMenuSelection = menuSelection;
@@ -151,6 +215,18 @@ void UI::showScriptLibraryScreen() {
         
         // Title at top-left like Poliquencer
         display->drawText(20, 5, "Select Script", COLOR_FG, FONT_SMALL);
+        
+        // Draw back arrow in top-right corner (bolder)
+        int16_t arrowX = SCREEN_WIDTH - 25;
+        int16_t arrowY = 11;
+        // Arrow pointing left: <-- (triple thickness for boldness)
+        display->drawLine(arrowX, arrowY, arrowX + 15, arrowY, COLOR_ACCENT);
+        display->drawLine(arrowX, arrowY - 1, arrowX + 15, arrowY - 1, COLOR_ACCENT);
+        display->drawLine(arrowX, arrowY + 1, arrowX + 15, arrowY + 1, COLOR_ACCENT);
+        display->drawLine(arrowX, arrowY, arrowX + 5, arrowY - 4, COLOR_ACCENT);
+        display->drawLine(arrowX + 1, arrowY, arrowX + 6, arrowY - 4, COLOR_ACCENT);
+        display->drawLine(arrowX, arrowY, arrowX + 5, arrowY + 4, COLOR_ACCENT);
+        display->drawLine(arrowX + 1, arrowY, arrowX + 6, arrowY + 4, COLOR_ACCENT);
         
         drawFooter("OK: load", "BACK: cancel");
         
@@ -229,6 +305,19 @@ void UI::showSettingsScreen() {
     if (lastMenuSelection == -1) {
         display->clear();
         drawHeader("SETTINGS");
+        
+        // Draw back arrow in top-right corner (bolder)
+        int16_t arrowX = SCREEN_WIDTH - 25;
+        int16_t arrowY = 11;
+        // Arrow pointing left: <-- (triple thickness for boldness)
+        display->drawLine(arrowX, arrowY, arrowX + 15, arrowY, COLOR_ACCENT);
+        display->drawLine(arrowX, arrowY - 1, arrowX + 15, arrowY - 1, COLOR_ACCENT);
+        display->drawLine(arrowX, arrowY + 1, arrowX + 15, arrowY + 1, COLOR_ACCENT);
+        display->drawLine(arrowX, arrowY, arrowX + 5, arrowY - 4, COLOR_ACCENT);
+        display->drawLine(arrowX + 1, arrowY, arrowX + 6, arrowY - 4, COLOR_ACCENT);
+        display->drawLine(arrowX, arrowY, arrowX + 5, arrowY + 4, COLOR_ACCENT);
+        display->drawLine(arrowX + 1, arrowY, arrowX + 6, arrowY + 4, COLOR_ACCENT);
+        
         drawFooter("OK: edit", "BACK: menu");
         
         // Draw all menu items
@@ -253,6 +342,18 @@ void UI::showAboutScreen() {
     
     // Draw header
     drawHeader("ABOUT");
+    
+    // Draw back arrow in top-right corner (bolder)
+    int16_t arrowX = SCREEN_WIDTH - 25;
+    int16_t arrowY = 11;
+    // Arrow pointing left: <-- (triple thickness for boldness)
+    display->drawLine(arrowX, arrowY, arrowX + 15, arrowY, COLOR_ACCENT);
+    display->drawLine(arrowX, arrowY - 1, arrowX + 15, arrowY - 1, COLOR_ACCENT);
+    display->drawLine(arrowX, arrowY + 1, arrowX + 15, arrowY + 1, COLOR_ACCENT);
+    display->drawLine(arrowX, arrowY, arrowX + 5, arrowY - 4, COLOR_ACCENT);
+    display->drawLine(arrowX + 1, arrowY, arrowX + 6, arrowY - 4, COLOR_ACCENT);
+    display->drawLine(arrowX, arrowY, arrowX + 5, arrowY + 4, COLOR_ACCENT);
+    display->drawLine(arrowX + 1, arrowY, arrowX + 6, arrowY + 4, COLOR_ACCENT);
     
     // About info
     display->drawText(MARGIN, 50, "Polyphonion", COLOR_FG, FONT_MEDIUM);
@@ -1116,8 +1217,8 @@ void UI::drawPoliquencerSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w,
     
     // === LEVERS (Pitch Control) ===
     int16_t leverSpacing = 2;
-    int16_t leverWidth = (w - 30) / 8 - leverSpacing;
-    int16_t leverStartX = x + 15;
+    int16_t leverWidth = (w - 6) / 8 - leverSpacing;  // 3px margins on each side
+    int16_t leverStartX = x + 3;
     
     for (int i = 0; i < 8; i++) {
         int16_t leverX = leverStartX + i * (leverWidth + leverSpacing);
@@ -1158,16 +1259,21 @@ void UI::drawPoliquencerSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w,
                 // Full redraw: clear lever area
                 display->fillRect(leverX, leverY, leverWidth, leverH, COLOR_BG);
                 
-                // Lever shaft (double line for depth)
+                // Lever shaft (double line for depth) - centered
                 int16_t shaftX = leverX + leverWidth / 2;
                 display->drawLine(shaftX - 1, leverY, shaftX - 1, leverY + shaftHeight, COLOR_DIM);
                 display->drawLine(shaftX, leverY, shaftX, leverY + shaftHeight, COLOR_FG);
             } else if (handleColorChanged) {
-                // Only redraw handle for trigger flash
-                display->fillRect(leverX, handleY - 2, leverWidth, handleHeight + 4, COLOR_BG);
+                // Only redraw handle for trigger flash - centered smaller handle
+                int16_t visualHandleWidth = leverWidth * 7 / 10;  // 70% of leverWidth
+                int16_t handleOffsetX = (leverWidth - visualHandleWidth) / 2;
+                display->fillRect(leverX + handleOffsetX, handleY - 2, visualHandleWidth, handleHeight + 4, COLOR_BG);
             }
             
-            // Lever handle (beveled rectangle)
+            // Lever handle (beveled rectangle) - 70% width, centered
+            int16_t visualHandleWidth = leverWidth * 7 / 10;  // Reduced by 30%
+            int16_t handleOffsetX = (leverWidth - visualHandleWidth) / 2;
+            
             uint16_t handleColor = COLOR_DIM;
             
             // Priority: edit mode > trigger flash > current step
@@ -1182,17 +1288,12 @@ void UI::drawPoliquencerSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w,
                 handleColor = COLOR_ACCENT;
             }
             
-            display->fillRect(leverX + 1, handleY, leverWidth - 2, handleHeight, handleColor);
+            display->fillRect(leverX + handleOffsetX + 1, handleY, visualHandleWidth - 2, handleHeight, handleColor);
             // Highlight edge
-            display->drawLine(leverX + 2, handleY + 1, leverX + leverWidth - 3, handleY + 1, COLOR_FG);
+            display->drawLine(leverX + handleOffsetX + 2, handleY + 1, leverX + handleOffsetX + visualHandleWidth - 3, handleY + 1, COLOR_FG);
         }
         
-        // Draw highlight box around entire lever ONLY when in lever edit mode (mode 0)
-        // Draw after loop to overlay on top
-        if (i == editStep && editMode == 0) {
-            display->drawRect(leverX, leverY, leverWidth, leverH, COLOR_HIGHLIGHT);
-            display->drawRect(leverX + 1, leverY + 1, leverWidth - 2, leverH - 2, COLOR_HIGHLIGHT);
-        }
+        // Highlight box removed - lever handle color change is sufficient for touch feedback
     }
     
     // === TOGGLE SWITCHES (Gate Mode) ===
@@ -1217,32 +1318,48 @@ void UI::drawPoliquencerSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w,
             // Clear switch area
             display->fillRect(switchX, switchY, switchWidth, switchH, COLOR_BG);
             
-            // Base plate (larger, more visible)
-            display->fillRect(switchX + 1, switchY + 2, switchWidth - 2, switchH - 4, COLOR_DIM);
+            // Draw toggle switch housing (vertical slot)
+            int16_t slotX = switchX + switchWidth / 2 - 2;
+            int16_t slotY = switchY + 3;
+            int16_t slotW = 4;
+            int16_t slotH = switchH - 6;
             
-            // Draw switch state with much larger, clearer graphics
+            // Outer housing (darker border)
+            display->drawRect(slotX - 1, slotY - 1, slotW + 2, slotH + 2, COLOR_DIM);
+            // Inner slot (black)
+            display->fillRect(slotX, slotY, slotW, slotH, 0x0000);
+            
+            // Calculate toggle handle position based on gate mode
+            int16_t handleY;
+            uint16_t handleColor;
+            
             if (gateMode == 0) {
-                // NORMAL: Filled rectangle (ON position - top)
-                display->fillRect(switchX + 2, switchY + 4, switchWidth - 4, 8, COLOR_FG);
-                display->fillRect(switchX + 2, switchY + 5, switchWidth - 4, 6, COLOR_ACCENT);
+                // NORMAL: Toggle UP (top position)
+                handleY = slotY + 2;
+                handleColor = COLOR_ACCENT;  // Cyan for normal/on
             } else if (gateMode == 1) {
-                // SKIP: Empty rectangle (OFF position - bottom)
-                display->drawRect(switchX + 2, switchY + switchH - 12, switchWidth - 4, 8, COLOR_FG);
-                // Draw X inside to indicate skip
-                display->drawLine(switchX + 3, switchY + switchH - 11, switchX + switchWidth - 3, switchY + switchH - 5, COLOR_DIM);
-                display->drawLine(switchX + switchWidth - 3, switchY + switchH - 11, switchX + 3, switchY + switchH - 5, COLOR_DIM);
-            } else if (gateMode == 2) {
-                // SLIDE: Filled rectangle in middle position (glide/portamento)
-                int16_t midY = switchY + switchH / 2;
-                display->fillRect(switchX + 2, midY - 4, switchWidth - 4, 8, COLOR_FG);
-                display->fillRect(switchX + 2, midY - 3, switchWidth - 4, 6, COLOR_DIAL);
+                // SKIP: Toggle DOWN (bottom position)
+                handleY = slotY + slotH - 8;
+                handleColor = COLOR_DIM;  // Gray for skip/off
+            } else {
+                // SLIDE: Toggle MIDDLE (center position)
+                handleY = slotY + slotH / 2 - 3;
+                handleColor = COLOR_DIAL;  // Light blue for slide/glide
             }
             
-            // Highlight border if editing switch (mode 1)
-            if (i == editStep && editMode == 1) {
-                display->drawRect(switchX, switchY, switchWidth, switchH, COLOR_HIGHLIGHT);
-                display->drawRect(switchX + 1, switchY + 1, switchWidth - 2, switchH - 2, COLOR_HIGHLIGHT);
-            }
+            // Draw toggle handle (small rounded rectangle)
+            int16_t handleW = switchWidth - 4;
+            int16_t handleX = switchX + 2;
+            int16_t handleH = 6;
+            
+            // Handle body
+            display->fillRect(handleX, handleY, handleW, handleH, handleColor);
+            // Handle highlight (top edge for 3D effect)
+            display->drawLine(handleX + 1, handleY + 1, handleX + handleW - 2, handleY + 1, COLOR_FG);
+            // Handle shadow (bottom edge)
+            display->drawLine(handleX + 1, handleY + handleH - 1, handleX + handleW - 2, handleY + handleH - 1, 0x2104);
+            
+            // Highlight border removed - switch position is clear visual feedback
         }
     }
     

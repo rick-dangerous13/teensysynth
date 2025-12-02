@@ -37,7 +37,8 @@ enum class AppState {
     SCRIPT_SELECT,
     SCRIPT_LIBRARY,  // Browse available scripts
     SCRIPT_RUNNING,
-    SETTINGS
+    SETTINGS,
+    ABOUT
 };
 
 AppState currentState = AppState::WELCOME;
@@ -52,6 +53,7 @@ void handleScriptSelectState();
 void handleScriptLibraryState();
 void handleScriptRunningState();
 void handleSettingsState();
+void handleAboutState();
 
 // Helper to change state and track history
 void changeState(AppState newState) {
@@ -108,6 +110,10 @@ void loop() {
         case AppState::SETTINGS:
             handleSettingsState();
             break;
+            
+        case AppState::ABOUT:
+            handleAboutState();
+            break;
     }
     
     // Update running scripts
@@ -129,6 +135,49 @@ void handleWelcomeState() {
 }
 
 void handleMainMenuState() {
+    // Handle touch input for quadrant selection
+    if (input.wasTouched()) {
+        int16_t touchX, touchY;
+        input.getTouchPoint(&touchX, &touchY);
+        input.clearTouch();
+        
+        // Determine which quadrant was touched
+        int16_t halfW = SCREEN_WIDTH / 2;
+        int16_t halfH = SCREEN_HEIGHT / 2;
+        
+        int quadrant = -1;
+        if (touchX < halfW && touchY < halfH) {
+            quadrant = 0;  // Top-left: Scripts
+        } else if (touchX >= halfW && touchY < halfH) {
+            quadrant = 1;  // Top-right: Settings
+        } else if (touchX < halfW && touchY >= halfH) {
+            quadrant = 2;  // Bottom-left: About
+        }
+        // Bottom-right quadrant (3) is empty, do nothing
+        
+        // Execute action based on quadrant
+        if (quadrant >= 0 && quadrant < 3) {
+            switch (quadrant) {
+                case 0: // Scripts
+                    changeState(AppState::SCRIPT_LIBRARY);
+                    ui.resetMenuTracking();
+                    ui.setMenuItemCount(scriptManager.getScriptLibraryCount());
+                    ui.showScriptLibraryScreen();
+                    break;
+                case 1: // Settings
+                    changeState(AppState::SETTINGS);
+                    ui.resetMenuTracking();
+                    ui.showSettingsScreen();
+                    break;
+                case 2: // About
+                    changeState(AppState::ABOUT);
+                    ui.resetMenuTracking();
+                    ui.showAboutScreen();
+                    break;
+            }
+        }
+    }
+    
     // Handle scrolling with encoder
     int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
@@ -152,6 +201,8 @@ void handleMainMenuState() {
                 ui.showSettingsScreen();
                 break;
             case 2: // About
+                changeState(AppState::ABOUT);
+                ui.resetMenuTracking();
                 ui.showAboutScreen();
                 break;
         }
@@ -351,34 +402,79 @@ void handleScriptSelectState() {
         
         // Check if Poliquencer is running
         if (scriptManager.getPoliquencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam)) {
-            // Poliquencer layout: levers at top, switches middle, cranks bottom
-            // Each control is about 35px wide, 8 controls across 280px width
-            int16_t controlWidth = 35;
-            int16_t startX = 20;  // Left margin
+            // Poliquencer layout with 3px margins: levers at top, switches middle, cranks bottom
+            // Updated: leverWidth = (320 - 6) / 8 - 2 = 37.25px per control
+            int16_t controlWidth = 37;
+            int16_t startX = 3;  // 3px left margin
             
             // Determine which step was touched (0-7)
             if (touchX >= startX && touchX < startX + 8 * controlWidth) {
                 uint8_t step = (touchX - startX) / controlWidth;
                 if (step > 7) step = 7;
                 
+                // Actual layout: leverY=30, leverH=115 (30-145), switchY=150, switchH=30 (150-180), crankY=185 (185-240)
                 // Determine which control type based on Y position
-                if (touchY >= 80 && touchY < 155) {
-                    // Levers area (top third)
+                if (touchY >= 30 && touchY < 145) {
+                    // Levers area - touch upper half to increase, lower half to decrease
                     ui.setSequencerEditStep(0, step);
                     ui.setSequencerEditMode(0, 0);  // Lever mode
-                } else if (touchY >= 155 && touchY < 190) {
-                    // Switches area (middle)
+                    
+                    // Get current value
+                    scriptManager.getPoliquencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam);
+                    int8_t currentValue = dummySteps[step];
+                    
+                    // Calculate midpoint of lever area: 30 + 115/2 = 87
+                    int16_t leverMidY = 87;
+                    
+                    if (touchY < leverMidY) {
+                        // Upper half - increase pitch
+                        int8_t newValue = currentValue + 1;
+                        if (newValue > 12) newValue = 12;  // Clamp to +12 semitones
+                        scriptManager.setPoliquencerStepValue(0, step, newValue);
+                    } else {
+                        // Lower half - decrease pitch
+                        int8_t newValue = currentValue - 1;
+                        if (newValue < -12) newValue = -12;  // Clamp to -12 semitones
+                        scriptManager.setPoliquencerStepValue(0, step, newValue);
+                    }
+                } else if (touchY >= 145 && touchY < 185) {
+                    // Switches area (expanded: actual is 150-180, we expand to 145-185 for easier touch)
                     ui.setSequencerEditStep(0, step);
                     ui.setSequencerEditMode(0, 1);  // Switch mode
-                    // Toggle switch state
+                    // Toggle switch cycles: down(1)→center(2)→up(0)→center(2)→down(1)→center(2)...
+                    // Gate modes: 0=NORMAL(up), 1=SKIP(down), 2=SLIDE(center)
                     scriptManager.getPoliquencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam);
-                    uint8_t newMode = (dummyGateModes[step] + 1) % 3;
-                    ui.adjustStepGateMode(0, 1);
+                    uint8_t currentMode = dummyGateModes[step];
+                    uint8_t toggleDir = ui.getToggleDirection(0, step);
+                    uint8_t newMode;
+                    
+                    if (currentMode == 2) {
+                        // At center - go in current direction
+                        if (toggleDir == 0) {
+                            newMode = 0;  // center → up
+                            // After reaching up, next direction is toward down
+                            ui.setToggleDirection(0, step, 1);
+                        } else {
+                            newMode = 1;  // center → down
+                            // After reaching down, next direction is toward up
+                            ui.setToggleDirection(0, step, 0);
+                        }
+                    } else {
+                        // At up or down - always go back to center
+                        newMode = 2;  // up/down → center
+                        // Direction stays the same - we'll continue in that direction from center
+                    }
+                    
                     scriptManager.setPoliquencerStepGateMode(0, step, newMode);
-                } else if (touchY >= 190 && touchY < 235) {
-                    // Cranks area (bottom third)
+                } else if (touchY >= 185 && touchY < 240) {
+                    // Cranks area (wheel + number) - increment duration on any touch
                     ui.setSequencerEditStep(0, step);
                     ui.setSequencerEditMode(0, 2);  // Crank mode
+                    // Get current duration and increment (1-8, wrapping)
+                    scriptManager.getPoliquencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam);
+                    uint8_t newDuration = dummyDurations[step] + 1;
+                    if (newDuration > 8) newDuration = 1;  // Wrap to 1
+                    scriptManager.setPoliquencerStepDuration(0, step, newDuration);
                 }
             }
         }
@@ -452,6 +548,22 @@ void handleScriptSelectState() {
 }
 
 void handleScriptLibraryState() {
+    // Handle touch on back arrow (top-right corner)
+    if (input.wasTouched()) {
+        int16_t touchX, touchY;
+        input.getTouchPoint(&touchX, &touchY);
+        input.clearTouch();
+        
+        // Back arrow touch area: wider area for easier tapping
+        if (touchX >= 270 && touchX <= 320 && touchY >= 0 && touchY <= 30) {
+            // Back arrow touched - go to main menu
+            changeState(AppState::MAIN_MENU);
+            ui.resetMenuTracking();
+            ui.showMainMenu();
+            return;
+        }
+    }
+    
     // Handle scrolling through available scripts
     int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
@@ -530,6 +642,22 @@ void handleSettingsState() {
     static bool editMode = false;
     int selectedSetting = ui.getSelectedMenuItem();
     
+    // Handle touch on back arrow (top-right corner)
+    if (input.wasTouched()) {
+        int16_t touchX, touchY;
+        input.getTouchPoint(&touchX, &touchY);
+        input.clearTouch();
+        
+        // Back arrow touch area: wider area for easier tapping
+        if (touchX >= 270 && touchX <= 320 && touchY >= 0 && touchY <= 30) {
+            // Back arrow touched - go to main menu
+            changeState(AppState::MAIN_MENU);
+            ui.resetMenuTracking();
+            ui.showMainMenu();
+            return;
+        }
+    }
+    
     // Handle encoder
     int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
@@ -578,3 +706,29 @@ void handleSettingsState() {
         ui.showMainMenu();
     }
 }
+
+void handleAboutState() {
+    // Handle touch on back arrow (top-right corner)
+    if (input.wasTouched()) {
+        int16_t touchX, touchY;
+        input.getTouchPoint(&touchX, &touchY);
+        input.clearTouch();
+        
+        // Back arrow touch area: wider area for easier tapping
+        if (touchX >= 270 && touchX <= 320 && touchY >= 0 && touchY <= 30) {
+            // Back arrow touched - go to main menu
+            changeState(AppState::MAIN_MENU);
+            ui.resetMenuTracking();
+            ui.showMainMenu();
+            return;
+        }
+    }
+    
+    // Handle Back button
+    if (input.isButtonPressed(BTN_BACK)) {
+        changeState(AppState::MAIN_MENU);
+        ui.resetMenuTracking();
+        ui.showMainMenu();
+    }
+}
+

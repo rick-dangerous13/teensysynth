@@ -43,6 +43,7 @@ struct ScriptSlot {
     uint8_t seqEditMode;     // 0=pitch, 1=gate mode, 2=duration (for poliquencer)
     // Poliquencer sequencer specific
     uint8_t seqGateModes[8]; // Gate modes: 0=normal, 1=skip, 2=slide
+    uint8_t seqToggleDirection[8]; // Toggle direction: 0=toward up, 1=toward down (for 3-position switch cycling)
     uint8_t seqDirection;    // Direction: 0=fwd, 1=rev, 2=pendulum, 3=random
     uint8_t seqCurrentBeat;  // Current beat within step (for ratchet animation)
     bool seqSteamTrigger;    // Steam animation trigger
@@ -129,6 +130,8 @@ public:
     void toggleStepGateMode(uint8_t slot);
     void adjustStepGateMode(uint8_t slot, int8_t delta);
     void cycleDirection(uint8_t slot);
+    uint8_t getToggleDirection(uint8_t slot, uint8_t step) const { return (slot < MAX_SCRIPTS && step < 8) ? scriptSlots[slot].seqToggleDirection[step] : 0; }
+    void setToggleDirection(uint8_t slot, uint8_t step, uint8_t dir) { if (slot < MAX_SCRIPTS && step < 8) scriptSlots[slot].seqToggleDirection[step] = dir; }
     
 private:
     Display* display;

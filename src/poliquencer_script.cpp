@@ -61,7 +61,9 @@ bool PoliquencerScript::begin() {
     
     // Initialize Gate DAC
     if (!dacGate.begin(MCP4725_GATE_ADDR)) {
-        Serial.println("SPNQ: WARNING - Gate DAC (0x61) not found");
+        Serial.print("SPNQ: WARNING - Gate DAC (0x");
+        Serial.print(MCP4725_GATE_ADDR, HEX);
+        Serial.println(") not found");
         dacGateInitialized = false;
     } else {
         dacGateInitialized = true;

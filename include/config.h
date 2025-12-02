@@ -85,8 +85,8 @@
 // ============================================================================
 // CV Output DAC (Address 0x60)
 #define MCP4725_CV_ADDR   0x60  // CV output I2C address
-// Gate Output DAC (Address 0x61) - requires A0 pin tied to VDD
-#define MCP4725_GATE_ADDR 0x61  // Gate output I2C address
+// Gate Output DAC (Address 0x63) - testing alternate address
+#define MCP4725_GATE_ADDR 0x63  // Gate output I2C address (trying 0x63)
 
 // Both use Teensy 4.1 I2C pins (Wire): SDA=18, SCL=19
 // 
