@@ -162,6 +162,13 @@ private:
     void drawPoliquencerSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
     void drawHeader(const char* title);
     void drawFooter(const char* leftLabel, const char* rightLabel);
+    
+    // Button strip rendering (context-sensitive bottom bar)
+    void drawButtonStrip(const char* btn1, const char* btn2, const char* btn3, const char* btn4);
+    void updateButtonStrip();  // Redraw only if changed
+    
+    // Button strip state tracking
+    char lastButtonLabels[4][16];  // Track last drawn labels for change detection
 };
 
 #endif // UI_H

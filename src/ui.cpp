@@ -8,8 +8,23 @@
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
+#include <ctype.h>
+
+// Helper function to convert string to lowercase
+static void toLowercase(char* dest, const char* src, size_t maxLen) {
+    size_t i;
+    for (i = 0; i < maxLen - 1 && src[i] != '\0'; i++) {
+        dest[i] = tolower((unsigned char)src[i]);
+    }
+    dest[i] = '\0';
+}
 
 UI::UI() : display(nullptr), clockTempo(DEFAULT_CLOCK_BPM), multitaskingMode(false), menuSelection(0), lastMenuSelection(-1), menuItemCount(0), scrollOffset(0), selectedScriptSlot(0) {
+    // Initialize button strip tracking
+    for (int i = 0; i < 4; i++) {
+        lastButtonLabels[i][0] = '\0';
+    }
+    
     // Initialize script slots
     for (int i = 0; i < MAX_SCRIPTS; i++) {
         strcpy(scriptSlots[i].name, "empty");
@@ -99,7 +114,8 @@ void UI::showMainMenu() {
     if (lastMenuSelection == -1) {
         display->clear();
         drawHeader("POLYPHONION");
-        drawFooter("OK: select", "");
+        // Main menu has no BACK button (top level)
+        drawButtonStrip("", "select", "", "");
         
         // Draw all menu items
         int16_t startY = 50;
@@ -409,19 +425,14 @@ void UI::drawScriptSlot(uint8_t slot, bool selected) {
         w = SCREEN_WIDTH / 2 - 2;
         h = SCREEN_HEIGHT / 2 - 2;
     } else {
-        // Full screen mode
+        // Full screen mode - reserve bottom 15px for button strip
         x = 0;
         y = 0;
         w = SCREEN_WIDTH;
-        h = SCREEN_HEIGHT;
+        h = 225;  // Leave room for button strip at y=225
     }
     
-    // Draw slot border (selection indicator)
-    if (selected) {
-        display->drawRect(x + 2, y + 2, w - 2, h - 2, COLOR_ACCENT);
-    } else {
-        display->drawRect(x + 2, y + 2, w - 2, h - 2, COLOR_BG);
-    }
+    // No selection border - clean interface
     
     // Draw slot number
     char slotNum[4];
@@ -447,9 +458,9 @@ void UI::drawScriptSlot(uint8_t slot, bool selected) {
         
         // Render based on script type
         if (scriptSlots[slot].scriptType == 0) {
-            // LFO - draw waveform visualization (70%) + editable parameters (30%)
+            // LFO - draw waveform visualization + editable parameters (condensed for button strip)
             int16_t contentY = y + 30;
-            int16_t contentH = h - 35;
+            int16_t contentH = h - 30;  // Adjusted for button strip
             
             // Waveform visualization area (70% of content height)
             int16_t waveH = (contentH * 70) / 100;
@@ -582,18 +593,18 @@ void UI::drawScriptSlot(uint8_t slot, bool selected) {
             // Update last edit param
             scriptSlots[slot].lastLfoEditParam = scriptSlots[slot].lfoEditParam;
         } else if (scriptSlots[slot].scriptType == 1) {
-            // Sequencer - split screen: top 3/4 for sliders, bottom 1/4 for dials
+            // Sequencer - split screen: top for sliders, bottom for dials (condensed for button strip)
             int16_t contentY = y + 25;
-            int16_t contentH = h - 30;
+            int16_t contentH = h - 25;  // Adjusted for button strip
             int16_t sliderH = (contentH * 3) / 4;
             int16_t dialH = contentH - sliderH;
             
             drawSequencerSliders(slot, x, contentY, w, sliderH);
             drawSequencerDials(slot, x, contentY + sliderH, w, dialH);
         } else if (scriptSlots[slot].scriptType == 2) {
-            // Poliquencer - full poliquencer aesthetic
-            int16_t contentY = y + 25;
-            int16_t contentH = h - 30;
+            // Poliquencer - full poliquencer aesthetic (condensed for button strip)
+            int16_t contentY = y + 20;
+            int16_t contentH = h - 20;  // Adjusted for button strip
             drawPoliquencerSequencer(slot, x, contentY, w, contentH);
         } else if (scriptSlots[slot].scriptType == 3) {
             // Touch Calibration Test - show targets
@@ -626,6 +637,9 @@ void UI::drawScriptSlot(uint8_t slot, bool selected) {
             display->fillRect(x + 6, y + 25, w - 12, h - 30, COLOR_BG);
             display->drawText(x + 8, y + 40, "Unknown type", COLOR_DIM, FONT_SMALL);
         }
+        
+        // Draw button strip for running scripts
+        drawButtonStrip("BACK", "edit", "", "");
     } else {
         display->drawText(x + 20, y + 5, "empty", COLOR_DIM, FONT_MEDIUM);
     }
@@ -644,19 +658,92 @@ void UI::drawHeader(const char* title) {
 void UI::drawFooter(const char* leftLabel, const char* rightLabel) {
     if (!display) return;
     
-    // Draw separator line
-    display->drawLine(MARGIN, SCREEN_HEIGHT - 25, SCREEN_WIDTH - MARGIN, SCREEN_HEIGHT - 25, COLOR_DIM);
+    // Convert old footer API to new button strip
+    // Button 1 (leftmost) = Back (if rightLabel contains "back" or "BACK")
+    // Button 2 = Select (if leftLabel is not empty)
+    // Buttons 3 & 4 = empty for now
     
-    // Draw left label (OK button hint)
-    display->drawText(MARGIN, SCREEN_HEIGHT - 18, leftLabel, COLOR_DIM, FONT_SMALL);
+    const char* btn1 = "";
+    const char* btn2 = "";
+    const char* btn3 = "";
+    const char* btn4 = "";
     
-    // Draw right label (Back button hint) - right-aligned
+    // Check if back button should be shown
     if (rightLabel && strlen(rightLabel) > 0) {
-        int16_t x1, y1;
-        uint16_t w, h;
-        display->getTextBounds(rightLabel, 0, 0, &x1, &y1, &w, &h, FONT_SMALL);
-        display->drawText(SCREEN_WIDTH - MARGIN - w, SCREEN_HEIGHT - 18, rightLabel, COLOR_DIM, FONT_SMALL);
+        // Look for "back" in the label
+        const char* backPos = strstr(rightLabel, "back");
+        const char* backPosUpper = strstr(rightLabel, "BACK");
+        if (backPos || backPosUpper) {
+            btn1 = "BACK";
+        }
     }
+    
+    // Check if select/OK button should be shown
+    if (leftLabel && strlen(leftLabel) > 0) {
+        // Parse the label to extract action
+        const char* colonPos = strchr(leftLabel, ':');
+        if (colonPos) {
+            // Extract text after "OK: " or "OK:"
+            const char* actionStart = colonPos + 1;
+            while (*actionStart == ' ') actionStart++;  // Skip spaces
+            btn2 = actionStart;
+        } else {
+            btn2 = "OK";
+        }
+    }
+    
+    drawButtonStrip(btn1, btn2, btn3, btn4);
+}
+
+void UI::drawButtonStrip(const char* btn1, const char* btn2, const char* btn3, const char* btn4) {
+    if (!display) return;
+    
+    // Button strip layout:
+    // Slim strip at y=225, height 15px (no separator line or dividers)
+    // 4 equal boxes across width, each 80px wide (320/4)
+    // Text centered in each box, always lowercase
+    // Design: Minimal, clean, no borders - just text labels
+    
+    const int16_t stripY = 225;
+    const int16_t stripH = 15;
+    const int16_t boxW = SCREEN_WIDTH / 4;  // 80px each
+    
+    // Button labels array
+    const char* labels[4] = {btn1, btn2, btn3, btn4};
+    
+    // Draw each button label
+    for (int i = 0; i < 4; i++) {
+        int16_t boxX = i * boxW;
+        int16_t textY = stripY + 4;  // Center vertically in slim strip
+        
+        // Convert label to lowercase for comparison and display
+        char lowerLabel[16];
+        toLowercase(lowerLabel, labels[i], sizeof(lowerLabel));
+        
+        // Clear box area if label changed
+        if (strcmp(lowerLabel, lastButtonLabels[i]) != 0) {
+            display->fillRect(boxX, stripY, boxW, stripH, COLOR_BG);
+            
+            // Draw label if not empty
+            if (lowerLabel[0] != '\0') {
+                // Center text horizontally in box
+                int16_t x1, y1;
+                uint16_t w, h;
+                display->getTextBounds(lowerLabel, 0, 0, &x1, &y1, &w, &h, FONT_SMALL);
+                int16_t textX = boxX + (boxW - w) / 2;
+                display->drawText(textX, textY, lowerLabel, COLOR_DIM, FONT_SMALL);
+            }
+            
+            // Update tracking
+            strncpy(lastButtonLabels[i], lowerLabel, sizeof(lastButtonLabels[i]) - 1);
+            lastButtonLabels[i][sizeof(lastButtonLabels[i]) - 1] = '\0';
+        }
+    }
+}
+
+void UI::updateButtonStrip() {
+    // For future use: allow dynamic button strip updates without full redraw
+    // Currently handled by drawButtonStrip's change detection
 }
 
 void UI::drawSequencerSliders(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h) {
@@ -1080,17 +1167,16 @@ void UI::drawPoliquencerSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w,
     
     bool firstDraw = (scriptSlots[slot].lastSeqCurrentStep == 255);
     
-    // Layout: 
-    // - Top 10px: Brass nameplate with title
-    // - Next 110px: Levers (pitch control)
-    // - Next 30px: Toggle switches (gate mode)
-    // - Bottom 60px: Hand cranks (duration/ratchets)
+    // Layout (condensed for button strip):
+    // - Top area: Levers (pitch control)
+    // - Middle: Toggle switches (gate mode)
+    // - Bottom: Hand cranks (duration/ratchets) - condensed
     
     int16_t leverY = y;
-    int16_t leverH = 115;
-    int16_t switchY = leverY + leverH + 5;
-    int16_t switchH = 30;
-    int16_t crankY = switchY + switchH + 5;
+    int16_t leverH = 100;  // Reduced from 115
+    int16_t switchY = leverY + leverH + 3;  // Reduced spacing
+    int16_t switchH = 25;  // Reduced from 30
+    int16_t crankY = switchY + switchH + 3;  // Reduced spacing
     int16_t crankH = h - (crankY - y);
     
     uint8_t currentStep = scriptSlots[slot].seqCurrentStep;
@@ -1264,8 +1350,8 @@ void UI::drawPoliquencerSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w,
     }
     
     // === HAND CRANKS (Duration/Ratchets) ===
-    int16_t crankCenterY = crankY + 20;
-    int16_t crankRadius = 8;
+    int16_t crankCenterY = crankY + 15;  // Reduced from 20
+    int16_t crankRadius = 7;  // Reduced from 8
     
     for (int i = 0; i < 8; i++) {
         int16_t crankCenterX = leverStartX + leverWidth / 2 + i * (leverWidth + leverSpacing);
@@ -1318,7 +1404,7 @@ void UI::drawPoliquencerSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w,
             // Beat count below
             char beatText[4];
             snprintf(beatText, sizeof(beatText), "%d", duration);
-            display->drawText(crankCenterX - 2, crankY + 45, beatText, COLOR_FG, FONT_SMALL);
+            display->drawText(crankCenterX - 2, crankY + 35, beatText, COLOR_FG, FONT_SMALL);
             
             // Show spinning animation if this is current step and ratcheting
             if (i == currentStep && duration > 1 && scriptSlots[slot].seqCurrentBeat > 0) {
@@ -1326,7 +1412,7 @@ void UI::drawPoliquencerSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w,
                 uint8_t currentBeat = scriptSlots[slot].seqCurrentBeat;
                 for (uint8_t b = 0; b < currentBeat && b < duration; b++) {
                     int16_t dotX = crankCenterX - (duration * 2) + (b * 4) + 2;
-                    int16_t dotY = crankY + 55;
+                    int16_t dotY = crankY + 45;  // Reduced from 55
                     display->fillCircle(dotX, dotY, 1, COLOR_ACCENT);
                 }
             }
@@ -1345,7 +1431,7 @@ void UI::drawPoliquencerSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w,
         // Clear old beat indicators when beat count changes
         if (scriptSlots[slot].lastSeqCurrentBeat != 255) {
             int16_t crankCenterX = leverStartX + leverWidth / 2 + currentStep * (leverWidth + leverSpacing);
-            display->fillRect(crankCenterX - 16, crankY + 52, 32, 8, COLOR_BG);
+            display->fillRect(crankCenterX - 16, crankY + 42, 32, 8, COLOR_BG);  // Adjusted position
         }
         scriptSlots[slot].lastSeqCurrentBeat = scriptSlots[slot].seqCurrentBeat;
     }

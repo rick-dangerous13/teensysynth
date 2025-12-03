@@ -36,12 +36,12 @@ public:
     void clearTouch();             // Clear touch state
     
 private:
-    // Button states (OK and Back buttons)
-    bool buttonState[2];
-    bool lastButtonState[2];
-    bool buttonPressed[2];
-    bool buttonReleased[2];
-    unsigned long lastDebounceTime[2];
+    // Button states (OK, OK2, and Back buttons)
+    bool buttonState[3];
+    bool lastButtonState[3];
+    bool buttonPressed[3];
+    bool buttonReleased[3];
+    unsigned long lastDebounceTime[3];
     
     // Encoder switch state
     bool encoderSwitchState;

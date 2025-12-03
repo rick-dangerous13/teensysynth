@@ -8,7 +8,7 @@
 
 InputHandler::InputHandler() : touchScreen(nullptr) {
     // Initialize all states to default
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < 3; i++) {
         buttonState[i] = false;
         lastButtonState[i] = false;
         buttonPressed[i] = false;
@@ -44,6 +44,7 @@ InputHandler::InputHandler() : touchScreen(nullptr) {
 void InputHandler::begin() {
     // Configure button pins with internal pull-up resistors
     pinMode(BTN_OK, INPUT_PULLUP);
+    pinMode(BTN_OK2, INPUT_PULLUP);
     pinMode(BTN_BACK, INPUT_PULLUP);
     
     // Configure encoder pins with internal pull-up resistors
@@ -80,7 +81,7 @@ void InputHandler::begin() {
 
 void InputHandler::update() {
     // Clear pressed/released flags from previous update
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < 3; i++) {
         buttonPressed[i] = false;
         buttonReleased[i] = false;
     }
@@ -90,7 +91,8 @@ void InputHandler::update() {
     
     // Update buttons
     updateButton(0, BTN_OK);
-    updateButton(1, BTN_BACK);
+    updateButton(1, BTN_OK2);
+    updateButton(2, BTN_BACK);
     
     // Update encoder
     updateEncoder();
@@ -191,11 +193,12 @@ void InputHandler::updateEncoderSwitch() {
 
 bool InputHandler::isButtonPressed(uint8_t button) {
     uint8_t index = getButtonIndex(button);
-    if (index >= 2) return false;
+    if (index >= 3) return false;
     
-    // Allow encoder button to also act as OK button
+    // Allow encoder button and BTN_OK2 to also act as OK button
     if (button == BTN_OK) {
-        return buttonPressed[index] || encoderSwitchPressed;
+        uint8_t ok2Index = getButtonIndex(BTN_OK2);
+        return buttonPressed[index] || buttonPressed[ok2Index] || encoderSwitchPressed;
     }
     
     return buttonPressed[index];
@@ -203,13 +206,13 @@ bool InputHandler::isButtonPressed(uint8_t button) {
 
 bool InputHandler::isButtonHeld(uint8_t button) {
     uint8_t index = getButtonIndex(button);
-    if (index >= 2) return false;
+    if (index >= 3) return false;
     return buttonState[index];
 }
 
 bool InputHandler::isButtonReleased(uint8_t button) {
     uint8_t index = getButtonIndex(button);
-    if (index >= 2) return false;
+    if (index >= 3) return false;
     return buttonReleased[index];
 }
 
@@ -245,7 +248,8 @@ bool InputHandler::isEncoderReleased() {
 uint8_t InputHandler::getButtonIndex(uint8_t button) {
     switch (button) {
         case BTN_OK:   return 0;
-        case BTN_BACK: return 1;
+        case BTN_OK2:  return 1;
+        case BTN_BACK: return 2;
         default:       return 255;  // Invalid
     }
 }

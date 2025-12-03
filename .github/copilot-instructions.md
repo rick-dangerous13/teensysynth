@@ -86,6 +86,51 @@ if (currentStep != lastCurrentStep) {
 - Check all edit modes cycle correctly
 - Confirm CV output changes appropriately
 
+## UI Layout Standards
+
+### Button Strip (Context Bar)
+**All screens must include a context-sensitive button strip at the bottom showing available physical button functions.**
+
+#### Layout Specification:
+- **Position**: Bottom 15px of screen (y=225-240)
+- **Structure**: Slim strip with 4 equal boxes (80px each), **no borders or dividers**
+- **Style**: Minimal, clean design - only lowercase text labels on black background
+- **Text**: All labels converted to lowercase, displayed in COLOR_DIM, FONT_SMALL
+- **Physical Mapping**:
+  - Box 1 (leftmost): **back** button (Pin 3) - navigation back/cancel
+  - Box 2: **select/ok** button (Pin 2/15/Encoder) - confirm/select action
+  - Box 3: Reserved for future button (context-dependent)
+  - Box 4 (rightmost): Reserved for future button (context-dependent)
+
+#### Context Rules:
+1. **Hide unavailable buttons** - Empty string = no label, box remains but blank
+2. **Main Menu** - No back button (can't go back from main), only select
+3. **Sub-screens** - Show both back and select as appropriate
+4. **Dynamic labels** - Button 2 should show current action (e.g., "select", "load", "edit")
+5. **Selective redrawing** - Only update boxes when labels change (tracked in `lastButtonLabels[]`)
+6. **Always lowercase** - All button labels automatically converted to lowercase
+
+#### Implementation Pattern:
+```cpp
+// In screen rendering function:
+ui.drawFooter("OK: select", "BACK: menu");
+// This automatically converts to button strip:
+// Box 1: "back"  Box 2: "select"  Box 3: ""  Box 4: ""
+
+// Or call directly (will be converted to lowercase):
+ui.drawButtonStrip("BACK", "load", "", "");  // Displays: "back", "load", "", ""
+```
+
+#### Anti-Flicker Requirements:
+- Button strip uses `lastButtonLabels[4][16]` for change detection
+- Only redraws boxes where labels changed
+- No separator lines or dividers to maintain/update
+- Never clears entire strip, only individual boxes
+- Lowercase conversion happens once per label update
+
+#### Design Philosophy:
+The button strip is intentionally minimal and unobtrusive - just lowercase text hints at the bottom of the screen. No borders, lines, or visual separation. This keeps focus on the main content while still providing essential context about available physical buttons.
+
 ## Common Pitfalls to Avoid
 1. ❌ Drawing unchanged elements every frame
 2. ❌ Using `fillScreen()` during updates
@@ -93,3 +138,5 @@ if (currentStep != lastCurrentStep) {
 4. ❌ Fetching stale data after modifying UI state
 5. ❌ Nesting conditional logic that excludes valid cases
 6. ❌ Drawing text/graphics without checking if value changed
+7. ❌ Showing "BACK" button on main menu (nowhere to go back to)
+8. ❌ Using old footer API without considering button strip context

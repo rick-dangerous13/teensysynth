@@ -41,7 +41,8 @@
 // ============================================================================
 // Button Configuration
 // ============================================================================
-#define BTN_OK    2    // OK button pin
+#define BTN_OK    2    // Primary OK button pin
+#define BTN_OK2   15   // Secondary OK button pin (alternative)
 #define BTN_BACK  3    // Back button pin
 
 // Button debounce settings
