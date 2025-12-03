@@ -10,6 +10,7 @@
 
 #include <Arduino.h>
 #include "config.h"
+#include "dac8568.h"
 #include "lfo_script.h"
 #include "poliquencer_script.h"
 #include "touch_test_script.h"
@@ -95,6 +96,10 @@ private:
     LFOScript* lfoInstances[MAX_SCRIPTS];  // LFO instance per slot
     PoliquencerScript* poliquencerInstances[MAX_SCRIPTS];  // Poliquencer instance per slot
     TouchTestScript* touchTestInstances[MAX_SCRIPTS];  // Touch test instance per slot
+    
+    // Shared DAC instance (8 channels)
+    DAC8568* dac;
+    bool dacInitialized;
     
     // Script library
     static const ScriptLibraryEntry scriptLibrary[];

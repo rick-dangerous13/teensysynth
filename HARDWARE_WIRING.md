@@ -70,62 +70,79 @@ BACK      Pin 3 to GND (momentary, active low)
 
 Both buttons use internal pull-up resistors. Pressing button connects pin to GND.
 
-### 4. MCP4725 DAC #1 (CV Output) - Address 0x60
+### 4. DAC8568 - 8-Channel 16-bit DAC (CV Outputs)
 ```
-MCP4725 Pin    Teensy 4.1    Notes
+DAC8568 Pin    Teensy 4.1    Notes
 -----------    ----------    -----
-VCC     →      5V            Must be 5V for 0-5V range
-GND     →      GND           
-SDA     →      Pin 18        I2C Data (shared)
-SCL     →      Pin 19        I2C Clock (shared)
-OUT     →      TRRS Left     CV output 0-5V
+VDD     →      5V            Power supply
+VSS     →      GND           Ground
+VREFIN  →      5V            External reference (for 0-5V range)
+VREFOUT →      (NC)          Leave unconnected (or 100nF to GND)
+SCLK    →      Pin 13        SPI Clock (shared with display/touch)
+DIN     →      Pin 11        SPI MOSI (shared with display/touch)
+SYNC    →      Pin 14        SPI CS (dedicated for DAC)
+LDAC    →      GND           Tied low for immediate updates
+CLR     →      5V            Tied high (never clear outputs)
+DOUT    →      (NC)          Leave unconnected
+VOUTA   →      CV Out 1      Channel 0: Step 1 CV / LFO output
+VOUTB   →      CV Out 2      Channel 1: Step 2 CV
+VOUTC   →      CV Out 3      Channel 2: Step 3 CV
+VOUTD   →      CV Out 4      Channel 3: Step 4 CV
+VOUTE   →      CV Out 5      Channel 4: Step 5 CV
+VOUTF   →      CV Out 6      Channel 5: Step 6 CV
+VOUTG   →      CV Out 7      Channel 6: Step 7 CV
+VOUTH   →      CV Out 8      Channel 7: Step 8 CV / Gate
 ```
 
-### 5. MCP4725 DAC #2 (Gate Output) - Address 0x61
+**DAC8568 Features:**
+- 16-bit resolution (65,535 steps) vs 12-bit on MCP4725 (4,096 steps)
+- 8 independent channels for polyphonic output
+- SPI interface (faster than I2C)
+- All channels update simultaneously
+- Shared SPI bus with display and touch (uses separate CS on Pin 14)
+
+**Polyphonic Sequencing:**
+The Poliquencer outputs all 8 steps continuously on separate channels, enabling:
+- Polyphonic patches (8-voice polyphony)
+- Multi-destination modulation (8 parameters simultaneously)
+- Parallel sequencing patterns
+
+### 5. CV Output Connections
+Each DAC8568 channel provides 0-5V CV output:
 ```
-MCP4725 Pin    Teensy 4.1    Notes
------------    ----------    -----
-VCC     →      5V            Must be 5V for 0-5V range
-GND     →      GND           
-SDA     →      Pin 18        I2C Data (shared with DAC #1)
-SCL     →      Pin 19        I2C Clock (shared with DAC #1)
-OUT     →      TRRS Ring     Gate output 0V/5V
+Channel    Output        Use Case
+-------    ------        --------
+0 (A)      CV Out 1      Poliquencer Step 1 / LFO primary
+1 (B)      CV Out 2      Poliquencer Step 2
+2 (C)      CV Out 3      Poliquencer Step 3
+3 (D)      CV Out 4      Poliquencer Step 4
+4 (E)      CV Out 5      Poliquencer Step 5
+5 (F)      CV Out 6      Poliquencer Step 6
+6 (G)      CV Out 7      Poliquencer Step 7
+7 (H)      CV Out 8      Poliquencer Step 8 / Gate
 ```
 
-**Important:** Most MCP4725 breakout boards have fixed I2C addresses set by the manufacturer:
-- Standard boards: Address 0x60 or 0x62 (check your module's documentation)
-- If you need two DACs, you must purchase modules with **different addresses**
-- Common combinations: 0x60 + 0x61, or 0x60 + 0x62
-- Some modules have solder jumpers to change the address
+Connect to TRS/TRRS jacks, banana jacks, or directly to Eurorack patch cables.
 
-### 6. TRRS Jack Output (Eurorack CV/Gate)
-```
-TRRS Pin       Connection        Signal
---------       ----------        ------
-Sleeve  →      GND               Common ground
-Left    →      DAC #1 OUT        CV output (0-5V analog)
-Ring    →      DAC #2 OUT        Gate output (0V/5V digital)
-Right   →      (unused)          Reserved for future
-```
+## SPI Bus Configuration
 
-## I2C Bus Configuration
+The SPI bus (MOSI=11, MISO=12, SCK=13) is shared between three devices:
+- **ILI9341 Display:** CS=10
+- **XPT2046 Touch:** CS=7
+- **DAC8568:** CS=14
 
-Both MCP4725 DACs share the same I2C bus (SDA=18, SCL=19) but must have different addresses:
-- **DAC #1 (CV):** Address 0x60 (default on most modules)
-- **DAC #2 (Gate):** Address 0x61 (or 0x62 if 0x61 unavailable)
-
-**Note:** Standard MCP4725 breakout boards have fixed addresses. You need to purchase two modules with different addresses, or use modules with solder jumpers to change the address.
+Each device has its own chip select pin for bus arbitration. Only one device is active at a time.
 
 ## Power Requirements
 
 - **Teensy 4.1:** USB power (5V) or external 5V via VIN
 - **Display:** 3.3V from Teensy (draws ~30-50mA)
+- **Touch Controller:** 3.3V from Teensy (minimal current)
 - **Encoder:** 3.3V from Teensy (minimal current)
 - **Buttons:** No power (uses pull-ups)
-- **MCP4725 #1:** 5V (critical for full 0-5V output range)
-- **MCP4725 #2:** 5V (critical for full 0-5V gate levels)
+- **DAC8568:** 5V (critical for full 0-5V output range)
 
-**Important:** Powering MCP4725 with 3.3V will limit output to 0-3.3V, which is insufficient for Eurorack CV/Gate standards.
+**Important:** DAC8568 VDD and VREFIN must both be 5V for proper 0-5V output range. Using 3.3V will limit output to 0-3.3V, insufficient for Eurorack standards.
 
 ## Eurorack CV/Gate Standards
 
@@ -144,30 +161,39 @@ Both MCP4725 DACs share the same I2C bus (SDA=18, SCL=19) but must have differen
 ## Troubleshooting
 
 ### Display not working
-- Check SPI connections (pins 10-13)
-- Verify 3.3V power
+- Check SPI connections (MOSI=11, MISO=12, SCK=13, CS=10)
+- Verify 3.3V power to display
 - Check orientation setting in code: `setRotation(3)`
+- Ensure TFT_CS (Pin 10) is properly connected
+
+### Touch not responding
+- Verify XPT2046 CS pin (Pin 7) is connected
+- Check that touch shares SPI bus with display (MOSI=11, MISO=12, SCK=13)
+- Calibration values in config.h may need adjustment for your specific display
+- T_IRQ can be left unconnected (firmware uses polling mode)
 
 ### Encoder too sensitive/insensitive
 - `ENC_STEPS_PER_NOTCH = 1` for DEBO encoder
 - Standard encoders may need `= 4`
 
-### MCP4725 not detected
-- Verify I2C connections (SDA=18, SCL=19)
-- Confirm 5V power to VCC pin
-- Check that modules have different addresses (use I2C scanner to verify)
-- Ensure you're using addresses 0x60 and 0x61 (or update config.h if different)
-- Use I2C scanner sketch to detect actual addresses on your modules
+### DAC8568 not detected
+- Verify SPI connections (DIN=11, SCLK=13, SYNC=14)
+- Confirm 5V power to both VDD and VREFIN
+- Check DAC_CS (Pin 14) is properly connected
+- Monitor serial output for "DAC8568 initialized successfully" message
+- Verify LDAC is tied to GND and CLR is tied to VDD
 
 ### CV output voltage too low
-- MCP4725 VDD must be 5V (not 3.3V)
-- Check voltage at MCP4725 OUT pin with multimeter
-- Verify TRRS jack wiring (sleeve must be grounded)
+- DAC8568 VDD must be 5V (not 3.3V)
+- VREFIN must also be 5V for full 0-5V range
+- Check voltages at VOUT pins with multimeter
+- Verify output jack wiring (ground connections)
 
-### Gate not triggering
-- Check second MCP4725 A0 pin (must be VDD for 0x61 address)
-- Verify gate DAC initialization in serial monitor
-- Test gate voltage with multimeter (should toggle 0V/5V)
+### No CV output on some channels
+- Check all VOUT pins are properly connected
+- Use serial monitor to verify which script is loaded
+- Test each channel individually with multimeter
+- DAC8568 outputs persist even when script is stopped
 
 ## Serial Monitor Output
 

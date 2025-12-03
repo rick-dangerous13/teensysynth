@@ -6,15 +6,14 @@
  */
 
 #include "poliquencer_script.h"
-#include <Wire.h>
 
 // Scale definitions (semitones from root)
 const int8_t PoliquencerScript::majorScale[7] = {0, 2, 4, 5, 7, 9, 11};
 const int8_t PoliquencerScript::minorScale[7] = {0, 2, 3, 5, 7, 8, 10};
 
 PoliquencerScript::PoliquencerScript()
-    : dacCVInitialized(false)
-    , dacGateInitialized(false)
+    : dac(nullptr)
+    , dacInitialized(false)
     , currentStep(0)
     , beatCounter(0)
     , rootNote(0)  // C
@@ -46,30 +45,8 @@ PoliquencerScript::PoliquencerScript()
 }
 
 bool PoliquencerScript::begin() {
-    // Initialize I2C if not already done
-    Wire.begin();
-    
-    // Initialize CV DAC
-    if (!dacCV.begin(MCP4725_CV_ADDR)) {
-        Serial.println("SPNQ: WARNING - CV DAC (0x60) not found");
-        dacCVInitialized = false;
-    } else {
-        dacCVInitialized = true;
-        dacCV.setVoltage(0, false);
-        Serial.println("SPNQ: CV DAC initialized");
-    }
-    
-    // Initialize Gate DAC
-    if (!dacGate.begin(MCP4725_GATE_ADDR)) {
-        Serial.print("SPNQ: WARNING - Gate DAC (0x");
-        Serial.print(MCP4725_GATE_ADDR, HEX);
-        Serial.println(") not found");
-        dacGateInitialized = false;
-    } else {
-        dacGateInitialized = true;
-        dacGate.setVoltage(0, false);
-        Serial.println("SPNQ: Gate DAC initialized");
-    }
+    // DAC is initialized externally and shared
+    dacInitialized = false;  // Will be set by setDAC()
     
     lastStepMicros = micros();
     
@@ -78,6 +55,26 @@ bool PoliquencerScript::begin() {
     currentCV = targetCV;
     
     return true;
+}
+
+void PoliquencerScript::setDAC(DAC8568* dacPtr) {
+    dac = dacPtr;
+    if (dac != nullptr) {
+        dacInitialized = true;
+        
+        // Initialize all 8 channels with their step voltages
+        // This creates polyphonic output - all steps output simultaneously!
+        for (uint8_t i = 0; i < 8; i++) {
+            float voltage = calculateCVVoltage(stepValues[i]);
+            dac->setVoltage(i, voltage);
+        }
+        
+        Serial.println("Poliquencer: Using DAC8568 with 8-channel polyphonic output");
+        Serial.println("  Channels 0-7: CV for steps 1-8 (all output simultaneously)");
+    } else {
+        dacInitialized = false;
+        Serial.println("Poliquencer: WARNING - No DAC available, running without CV output");
+    }
 }
 
 void PoliquencerScript::update() {
@@ -207,9 +204,10 @@ void PoliquencerScript::updatePortamento() {
 }
 
 void PoliquencerScript::stop() {
-    // Turn off outputs
-    outputCV(0.0f);
-    outputGate(false);
+    // Turn off all outputs
+    if (dacInitialized && dac != nullptr) {
+        dac->setAllVoltages(0.0f);
+    }
     gateHigh = false;
     steamTrigger = false;
 }
@@ -283,28 +281,30 @@ float PoliquencerScript::calculateCVVoltage(int8_t stepValue) {
 }
 
 uint16_t PoliquencerScript::voltageToDACValue(float volts) {
-    if (volts < 0.0f) volts = 0.0f;
-    if (volts > DAC_MAX_VOLTAGE) volts = DAC_MAX_VOLTAGE;
-    
-    uint16_t dacValue = (uint16_t)((volts / DAC_MAX_VOLTAGE) * DAC_MAX_VALUE);
-    if (dacValue > DAC_MAX_VALUE) dacValue = DAC_MAX_VALUE;
-    
-    return dacValue;
+    // DAC8568 is 16-bit (0-65535)
+    // Uses DAC8568 class method internally, this is kept for compatibility
+    if (dac != nullptr) {
+        return dac->voltageToDACValue(volts);
+    }
+    return 0;
 }
 
 void PoliquencerScript::outputCV(float volts) {
-    if (dacCVInitialized) {
-        uint16_t dacValue = voltageToDACValue(volts);
-        dacCV.setVoltage(dacValue, false);
+    if (dacInitialized && dac != nullptr) {
+        // Update the CV for the current step on its dedicated channel
+        // Each step has its own channel (0-7), creating polyphonic output
+        dac->setVoltage(currentStep, volts);
     }
 }
 
 void PoliquencerScript::outputGate(bool high) {
-    if (dacGateInitialized) {
-        float voltage = high ? GATE_HIGH_VOLTAGE : GATE_LOW_VOLTAGE;
-        uint16_t dacValue = voltageToDACValue(voltage);
-        dacGate.setVoltage(dacValue, false);
-    }
+    // Gate output currently disabled - all 8 channels dedicated to step CVs
+    // For polyphonic operation, gate information should be encoded differently
+    // Options: 
+    //   1. Use velocity/amplitude on CV channels
+    //   2. Add separate gate output hardware
+    //   3. Use high/low voltage thresholds on CV to indicate gate
+    (void)high;  // Suppress unused parameter warning
 }
 
 void PoliquencerScript::getDisplayText(char* buffer, size_t bufferSize) {

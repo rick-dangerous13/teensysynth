@@ -1,15 +1,16 @@
 /**
- * SteampunQuencer Script Header
+ * Poliquencer Script Header
  * 
- * Metropolix-inspired 8-step sequencer with steampunk aesthetic
+ * Metropolix-inspired 8-step sequencer with artistic aesthetic
  * Features: Gate modes (normal/skip/slide), direction control, ratcheting
+ * 8-channel CV output: Each step has independent CV output for polyphonic capability
  */
 
 #ifndef STEAMPUNQUENCER_SCRIPT_H
 #define STEAMPUNQUENCER_SCRIPT_H
 
 #include <Arduino.h>
-#include <Adafruit_MCP4725.h>
+#include "dac8568.h"
 #include "config.h"
 
 // Gate modes for each step
@@ -40,6 +41,9 @@ public:
     // Stop the sequencer
     void stop();
     
+    // Set shared DAC instance
+    void setDAC(DAC8568* dacPtr);
+    
     // Step parameters
     void setStepValue(uint8_t step, int8_t semitones); // -12 to +12 (2 octaves)
     void setStepDuration(uint8_t step, uint8_t beats); // 1-8 beats per step (ratchets)
@@ -69,11 +73,9 @@ public:
     void getDisplayText(char* buffer, size_t bufferSize);
     
 private:
-    // DAC objects
-    Adafruit_MCP4725 dacCV;
-    Adafruit_MCP4725 dacGate;
-    bool dacCVInitialized;
-    bool dacGateInitialized;
+    // DAC object (shared, 8 channels)
+    DAC8568* dac;
+    bool dacInitialized;
     
     // Sequencer state
     int8_t stepValues[8];       // Step values in semitones (-12 to +12)

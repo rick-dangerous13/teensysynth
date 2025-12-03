@@ -37,14 +37,14 @@ enum class AppState {
     SCRIPT_SELECT,
     SCRIPT_LIBRARY,  // Browse available scripts
     SCRIPT_RUNNING,
-    SETTINGS,
-    ABOUT
+    SETTINGS
 };
 
 AppState currentState = AppState::WELCOME;
 AppState previousState = AppState::MAIN_MENU;
 unsigned long welcomeStartTime = 0;
 const unsigned long WELCOME_DURATION = 2000; // 2 seconds
+bool welcomeScreenDrawn = false;
 
 // Function declarations
 void handleWelcomeState();
@@ -53,7 +53,6 @@ void handleScriptSelectState();
 void handleScriptLibraryState();
 void handleScriptRunningState();
 void handleSettingsState();
-void handleAboutState();
 
 // Helper to change state and track history
 void changeState(AppState newState) {
@@ -64,21 +63,34 @@ void changeState(AppState newState) {
 void setup() {
     // Initialize serial for debugging
     Serial.begin(115200);
-    delay(100);
-    Serial.println("Polyphonion Initializing...");
+    delay(500);
+    Serial.println("\n=== Polyphonion Initializing ===");
     
     // Initialize hardware
+    Serial.println("Initializing display...");
     display.begin();
+    Serial.println("Display OK");
+    
+    Serial.println("Initializing input...");
     input.begin();
+    Serial.println("Input OK");
+    
+    Serial.println("Initializing UI...");
     ui.begin(&display);
+    Serial.println("UI OK");
+    
+    Serial.println("Initializing ScriptManager (DAC8568 will be configured but not used)...");
     scriptManager.begin();
+    Serial.println("ScriptManager OK");
     
     // Show welcome screen
     currentState = AppState::WELCOME;
     welcomeStartTime = millis();
-    ui.showWelcomeScreen();
+    welcomeScreenDrawn = false;
     
-    Serial.println("Polyphonion Ready!");
+    Serial.println("=== Polyphonion Ready! ===");
+    Serial.println("Note: System will work normally without DAC8568 hardware");
+    Serial.println("CV outputs will be available when DAC8568 is connected to Pin 14\n");
 }
 
 void loop() {
@@ -110,17 +122,22 @@ void loop() {
         case AppState::SETTINGS:
             handleSettingsState();
             break;
-            
-        case AppState::ABOUT:
-            handleAboutState();
-            break;
     }
     
-    // Update running scripts
+    // Update running scripts (will work without DAC hardware)
     scriptManager.update();
+    
+    // Small delay to prevent excessive looping
+    delay(1);
 }
 
 void handleWelcomeState() {
+    // Draw welcome screen only once
+    if (!welcomeScreenDrawn) {
+        ui.showWelcomeScreen();
+        welcomeScreenDrawn = true;
+    }
+    
     // Transition to main menu after welcome duration
     if (millis() - welcomeStartTime >= WELCOME_DURATION) {
         currentState = AppState::MAIN_MENU;
@@ -135,49 +152,6 @@ void handleWelcomeState() {
 }
 
 void handleMainMenuState() {
-    // Handle touch input for quadrant selection
-    if (input.wasTouched()) {
-        int16_t touchX, touchY;
-        input.getTouchPoint(&touchX, &touchY);
-        input.clearTouch();
-        
-        // Determine which quadrant was touched
-        int16_t halfW = SCREEN_WIDTH / 2;
-        int16_t halfH = SCREEN_HEIGHT / 2;
-        
-        int quadrant = -1;
-        if (touchX < halfW && touchY < halfH) {
-            quadrant = 0;  // Top-left: Scripts
-        } else if (touchX >= halfW && touchY < halfH) {
-            quadrant = 1;  // Top-right: Settings
-        } else if (touchX < halfW && touchY >= halfH) {
-            quadrant = 2;  // Bottom-left: About
-        }
-        // Bottom-right quadrant (3) is empty, do nothing
-        
-        // Execute action based on quadrant
-        if (quadrant >= 0 && quadrant < 3) {
-            switch (quadrant) {
-                case 0: // Scripts
-                    changeState(AppState::SCRIPT_LIBRARY);
-                    ui.resetMenuTracking();
-                    ui.setMenuItemCount(scriptManager.getScriptLibraryCount());
-                    ui.showScriptLibraryScreen();
-                    break;
-                case 1: // Settings
-                    changeState(AppState::SETTINGS);
-                    ui.resetMenuTracking();
-                    ui.showSettingsScreen();
-                    break;
-                case 2: // About
-                    changeState(AppState::ABOUT);
-                    ui.resetMenuTracking();
-                    ui.showAboutScreen();
-                    break;
-            }
-        }
-    }
-    
     // Handle scrolling with encoder
     int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
@@ -201,8 +175,6 @@ void handleMainMenuState() {
                 ui.showSettingsScreen();
                 break;
             case 2: // About
-                changeState(AppState::ABOUT);
-                ui.resetMenuTracking();
                 ui.showAboutScreen();
                 break;
         }
@@ -548,22 +520,6 @@ void handleScriptSelectState() {
 }
 
 void handleScriptLibraryState() {
-    // Handle touch on back arrow (top-right corner)
-    if (input.wasTouched()) {
-        int16_t touchX, touchY;
-        input.getTouchPoint(&touchX, &touchY);
-        input.clearTouch();
-        
-        // Back arrow touch area: wider area for easier tapping
-        if (touchX >= 270 && touchX <= 320 && touchY >= 0 && touchY <= 30) {
-            // Back arrow touched - go to main menu
-            changeState(AppState::MAIN_MENU);
-            ui.resetMenuTracking();
-            ui.showMainMenu();
-            return;
-        }
-    }
-    
     // Handle scrolling through available scripts
     int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
@@ -642,22 +598,6 @@ void handleSettingsState() {
     static bool editMode = false;
     int selectedSetting = ui.getSelectedMenuItem();
     
-    // Handle touch on back arrow (top-right corner)
-    if (input.wasTouched()) {
-        int16_t touchX, touchY;
-        input.getTouchPoint(&touchX, &touchY);
-        input.clearTouch();
-        
-        // Back arrow touch area: wider area for easier tapping
-        if (touchX >= 270 && touchX <= 320 && touchY >= 0 && touchY <= 30) {
-            // Back arrow touched - go to main menu
-            changeState(AppState::MAIN_MENU);
-            ui.resetMenuTracking();
-            ui.showMainMenu();
-            return;
-        }
-    }
-    
     // Handle encoder
     int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
@@ -706,29 +646,3 @@ void handleSettingsState() {
         ui.showMainMenu();
     }
 }
-
-void handleAboutState() {
-    // Handle touch on back arrow (top-right corner)
-    if (input.wasTouched()) {
-        int16_t touchX, touchY;
-        input.getTouchPoint(&touchX, &touchY);
-        input.clearTouch();
-        
-        // Back arrow touch area: wider area for easier tapping
-        if (touchX >= 270 && touchX <= 320 && touchY >= 0 && touchY <= 30) {
-            // Back arrow touched - go to main menu
-            changeState(AppState::MAIN_MENU);
-            ui.resetMenuTracking();
-            ui.showMainMenu();
-            return;
-        }
-    }
-    
-    // Handle Back button
-    if (input.isButtonPressed(BTN_BACK)) {
-        changeState(AppState::MAIN_MENU);
-        ui.resetMenuTracking();
-        ui.showMainMenu();
-    }
-}
-

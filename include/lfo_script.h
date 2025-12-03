@@ -1,7 +1,7 @@
 /**
  * LFO Script
  * 
- * Simple Low-Frequency Oscillator with CV output via MCP4725 DAC
+ * Simple Low-Frequency Oscillator with CV output via DAC8568
  * Generates sine wave modulation (0-5V) for Eurorack systems
  */
 
@@ -9,7 +9,7 @@
 #define LFO_SCRIPT_H
 
 #include <Arduino.h>
-#include <Adafruit_MCP4725.h>
+#include "dac8568.h"
 #include "config.h"
 
 class LFOScript {
@@ -19,6 +19,9 @@ public:
     bool begin();
     void update();
     void stop();
+    
+    // Set shared DAC instance
+    void setDAC(DAC8568* dacPtr);
     
     // Parameter control
     void setFrequency(float hz);     // 0.01 Hz to 100 Hz
@@ -38,7 +41,7 @@ public:
     void drawWaveform(int16_t x, int16_t y, int16_t w, int16_t h);
 
 private:
-    Adafruit_MCP4725 dac;
+    DAC8568* dac;  // Shared DAC pointer
     
     // LFO parameters
     float frequency;        // Frequency in Hz

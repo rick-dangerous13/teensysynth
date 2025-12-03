@@ -74,8 +74,9 @@ if (currentStep != lastCurrentStep) {
 ## Hardware Specifications
 - **MCU**: Teensy 4.1 (600MHz ARM Cortex-M7)
 - **Display**: ILI9341 240x320 TFT (SPI, using ILI9341_t3 library)
-- **Input**: Rotary encoder with button
-- **Output**: 2x MCP4725 12-bit DACs for CV
+- **Touch**: XPT2046 touchscreen controller (SPI, polling mode)
+- **Input**: Rotary encoder with button + touchscreen
+- **Output**: DAC8568 16-bit 8-channel DAC for CV (SPI)
 - **Shell**: zsh on macOS
 - **Build**: PlatformIO with `teensy41` environment
 

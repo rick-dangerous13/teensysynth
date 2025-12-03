@@ -81,43 +81,54 @@
 //   T_CLK  -> Pin 13 (SCK - shared with display)
 
 // ============================================================================
-// MCP4725 DAC Configuration (Eurorack CV/Gate Output)
+// DAC8568 Configuration (8-Channel CV Output)
 // ============================================================================
-// CV Output DAC (Address 0x60)
-#define MCP4725_CV_ADDR   0x60  // CV output I2C address
-// Gate Output DAC (Address 0x63) - testing alternate address
-#define MCP4725_GATE_ADDR 0x63  // Gate output I2C address (trying 0x63)
+// Texas Instruments DAC8568: 16-bit, 8-channel DAC with SPI interface
+// Provides 8 independent CV outputs (0-5V) for polyphonic or multi-parameter control
 
-// Both use Teensy 4.1 I2C pins (Wire): SDA=18, SCL=19
-// 
-// MCP4725 #1 (CV) Wiring:
-//   MCP4725 VCC  -> Teensy 5V (for 0-5V output range)
-//   MCP4725 GND  -> Teensy GND
-//   MCP4725 SDA  -> Teensy Pin 18 (SDA)
-//   MCP4725 SCL  -> Teensy Pin 19 (SCL)
-//   MCP4725 OUT  -> TRRS Jack "Left" pin (CV output)
-//   Module address: 0x60 (factory set)
-// 
-// MCP4725 #2 (Gate) Wiring:
-//   MCP4725 VCC  -> Teensy 5V
-//   MCP4725 GND  -> Teensy GND
-//   MCP4725 SDA  -> Teensy Pin 18 (SDA) - shared I2C bus
-//   MCP4725 SCL  -> Teensy Pin 19 (SCL) - shared I2C bus
-//   MCP4725 OUT  -> TRRS Jack "Ring" pin (Gate output)
-//   Module address: 0x61 (factory set - purchase module with this address)
+#define DAC_CS        14   // DAC chip select pin (dedicated SPI)
+// DAC uses shared SPI pins: MOSI=11, MISO=12, SCK=13 (shared with display/touch)
+
+// DAC8568 Wiring:
+//   DAC8568 VDD    -> Teensy 5V
+//   DAC8568 VSS    -> Teensy GND
+//   DAC8568 VREFIN -> 5V (external reference for 0-5V output range)
+//   DAC8568 VREFOUT -> Not connected (or 100nF capacitor to GND if using internal ref)
+//   DAC8568 SCLK   -> Teensy Pin 13 (SCK - shared SPI bus)
+//   DAC8568 DIN    -> Teensy Pin 11 (MOSI - shared SPI bus)
+//   DAC8568 SYNC   -> Teensy Pin 14 (DAC_CS - dedicated chip select)
+//   DAC8568 LDAC   -> Teensy GND (tied low for immediate updates)
+//   DAC8568 CLR    -> Teensy 5V (tied high, never clear)
+//   DAC8568 DOUT   -> Not connected (or Pin 12 if daisy-chaining)
+//   DAC8568 VOUTA-H -> CV outputs 0-7 (0-5V analog)
 //
-// Note: Standard MCP4725 breakout boards have fixed I2C addresses.
-//       You need two modules with different addresses (0x60 and 0x61).
+// Channel assignment:
+//   Channel 0 (A): Poliquencer Step 1 CV / LFO primary output
+//   Channel 1 (B): Poliquencer Step 2 CV
+//   Channel 2 (C): Poliquencer Step 3 CV
+//   Channel 3 (D): Poliquencer Step 4 CV
+//   Channel 4 (E): Poliquencer Step 5 CV
+//   Channel 5 (F): Poliquencer Step 6 CV
+//   Channel 6 (G): Poliquencer Step 7 CV
+//   Channel 7 (H): Poliquencer Step 8 CV / Gate output
+//
+// Note: SPI bus is shared with ILI9341 display (CS=10) and XPT2046 touch (CS=7)
+//       Each device uses its own chip select for bus arbitration
 // 
-// TRRS Jack Output:
-//   Left   -> CV output (0-5V analog)
-//   Ring   -> Gate output (0V/5V digital)
-//   Sleeve -> GND (common ground)
-// 
-#define DAC_MAX_VALUE 4095  // 12-bit DAC (0-4095)
-#define DAC_MAX_VOLTAGE 5.0 // Maximum output voltage (requires VDD=5V)
-#define GATE_HIGH_VOLTAGE 5.0  // Gate high voltage
-#define GATE_LOW_VOLTAGE 0.0   // Gate low voltage
+#define DAC_MAX_VALUE 65535     // 16-bit DAC (0-65535)
+#define DAC_MAX_VOLTAGE 5.0f    // Maximum output voltage (with 5V reference)
+#define GATE_HIGH_VOLTAGE 5.0f  // Gate high voltage
+#define GATE_LOW_VOLTAGE 0.0f   // Gate low voltage
+
+// DAC8568 channel definitions for easy reference
+#define DAC_CH_STEP1    0  // Poliquencer step 1 / LFO output
+#define DAC_CH_STEP2    1  // Poliquencer step 2
+#define DAC_CH_STEP3    2  // Poliquencer step 3
+#define DAC_CH_STEP4    3  // Poliquencer step 4
+#define DAC_CH_STEP5    4  // Poliquencer step 5
+#define DAC_CH_STEP6    5  // Poliquencer step 6
+#define DAC_CH_STEP7    6  // Poliquencer step 7
+#define DAC_CH_STEP8    7  // Poliquencer step 8 / Gate output
 
 // ============================================================================
 // Script Manager Configuration
