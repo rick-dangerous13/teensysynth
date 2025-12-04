@@ -90,6 +90,9 @@ public:
     void setPoliquencerStepDuration(uint8_t slot, uint8_t step, uint8_t duration);
     void setPoliquencerStepGateMode(uint8_t slot, uint8_t step, uint8_t gateMode);
     void setPoliquencerDirection(uint8_t slot, uint8_t direction);
+    
+    // DAC access (for testing)
+    DAC8568* getDAC() { return dac; }
 
 private:
     ScriptInfo scripts[MAX_SCRIPTS];

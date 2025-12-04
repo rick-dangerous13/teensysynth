@@ -87,17 +87,20 @@
 // Texas Instruments DAC8568: 16-bit, 8-channel DAC with SPI interface
 // Provides 8 independent CV outputs (0-5V) for polyphonic or multi-parameter control
 
-#define DAC_CS        14   // DAC chip select pin (dedicated SPI)
-// DAC uses shared SPI pins: MOSI=11, MISO=12, SCK=13 (shared with display/touch)
+#define DAC_CS        16   // DAC chip select pin (/SYNC)
+#define DAC_MOSI      26   // SPI1 MOSI (dedicated for DAC, avoids display conflicts)
+#define DAC_SCK       27   // SPI1 SCK (dedicated for DAC)
+#define DAC_RST       17   // DAC reset pin (optional - can tie to 5V if not used)
+// DAC uses SPI1 bus to avoid conflicts with display/touch (which use SPI)
 
 // DAC8568 Wiring:
 //   DAC8568 VDD    -> Teensy 5V
 //   DAC8568 VSS    -> Teensy GND
 //   DAC8568 VREFIN -> 5V (external reference for 0-5V output range)
 //   DAC8568 VREFOUT -> Not connected (or 100nF capacitor to GND if using internal ref)
-//   DAC8568 SCLK   -> Teensy Pin 13 (SCK - shared SPI bus)
-//   DAC8568 DIN    -> Teensy Pin 11 (MOSI - shared SPI bus)
-//   DAC8568 SYNC   -> Teensy Pin 14 (DAC_CS - dedicated chip select)
+//   DAC8568 SCLK   -> Teensy Pin 27 (SCK1 - dedicated SPI1 bus)
+//   DAC8568 DIN    -> Teensy Pin 26 (MOSI1 - dedicated SPI1 bus)
+//   DAC8568 SYNC   -> Teensy Pin 16 (DAC_CS - chip select)
 //   DAC8568 LDAC   -> Teensy GND (tied low for immediate updates)
 //   DAC8568 CLR    -> Teensy 5V (tied high, never clear)
 //   DAC8568 DOUT   -> Not connected (or Pin 12 if daisy-chaining)
@@ -113,8 +116,8 @@
 //   Channel 6 (G): Poliquencer Step 7 CV
 //   Channel 7 (H): Poliquencer Step 8 CV / Gate output
 //
-// Note: SPI bus is shared with ILI9341 display (CS=10) and XPT2046 touch (CS=7)
-//       Each device uses its own chip select for bus arbitration
+// Note: DAC uses SPI1 (Pin 26/27) to avoid conflicts with display/touch (SPI0 Pin 11/13)
+//       This completely isolates the DAC from display communication
 // 
 #define DAC_MAX_VALUE 65535     // 16-bit DAC (0-65535)
 #define DAC_MAX_VOLTAGE 5.0f    // Maximum output voltage (with 5V reference)

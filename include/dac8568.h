@@ -38,8 +38,9 @@ public:
      * Constructor
      * @param csPin Chip select pin for SPI
      * @param refVoltage Reference voltage (default 5.0V for external ref)
+     * @param rstPin Reset pin (optional, 255 = not used)
      */
-    DAC8568(uint8_t csPin, float refVoltage = 5.0f);
+    DAC8568(uint8_t csPin, float refVoltage = 5.0f, uint8_t rstPin = 255);
     
     /**
      * Initialize the DAC
@@ -92,6 +93,7 @@ public:
 
 private:
     uint8_t _csPin;
+    uint8_t _rstPin;
     float _refVoltage;
     bool _initialized;
     

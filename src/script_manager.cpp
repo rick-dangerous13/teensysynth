@@ -46,12 +46,12 @@ void ScriptManager::begin() {
     // Initialize DAC8568 (8-channel, 16-bit DAC)
     // Note: This will succeed even if hardware is not connected
     // SPI commands will just go to an inactive bus
-    dac = new DAC8568(DAC_CS, DAC_MAX_VOLTAGE);
+    dac = new DAC8568(DAC_CS, DAC_MAX_VOLTAGE, DAC_RST);
     dac->begin();  // Always returns true, no hardware detection
     dacInitialized = true;
     
     Serial.println("ScriptManager: DAC8568 interface configured");
-    Serial.println("  Note: CV output requires DAC8568 hardware on Pin 14 (CS)");
+    Serial.println("  Note: CV output requires DAC8568 hardware (check config.h for CS pin)");
     Serial.println("  Firmware will run normally without DAC connected");
     
     Serial.println("ScriptManager: Initialized");

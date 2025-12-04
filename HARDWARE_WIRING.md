@@ -20,8 +20,8 @@
 | 11 | Touch | T_DIN | Shared with TFT MOSI |
 | 12 | Touch | T_DO | Shared with TFT MISO |
 | 13 | Touch | T_CLK | Shared with TFT SCLK |
-| 18 | I2C | SDA | Shared for both DACs |
-| 19 | I2C | SCL | Shared for both DACs |
+| 16 | DAC | DAC_CS | DAC8568 Chip Select |
+| 15 | Button | OK2 Button | Alternative OK (pull-up) |
 
 ## Component Wiring Details
 
@@ -70,20 +70,19 @@ BACK      Pin 3 to GND (momentary, active low)
 
 Both buttons use internal pull-up resistors. Pressing button connects pin to GND.
 
-### 4. DAC8568 - 8-Channel 16-bit DAC (CV Outputs)
+### 4. BOOST-DAC8568 Board - 8-Channel 16-bit DAC (CV Outputs)
 ```
-DAC8568 Pin    Teensy 4.1    Notes
------------    ----------    -----
-VDD     →      5V            Power supply
-VSS     →      GND           Ground
-VREFIN  →      5V            External reference (for 0-5V range)
-VREFOUT →      (NC)          Leave unconnected (or 100nF to GND)
+BOOST-DAC8568  Teensy 4.1    Notes
+-------------  ----------    -----
+5V      →      5V            Power supply (CRITICAL: Must be 5V)
+GND     →      GND           Ground (2 GND pins available on board)
+3v3     →      (NC)          Leave unconnected (not needed)
 SCLK    →      Pin 13        SPI Clock (shared with display/touch)
-DIN     →      Pin 11        SPI MOSI (shared with display/touch)
-SYNC    →      Pin 14        SPI CS (dedicated for DAC)
-LDAC    →      GND           Tied low for immediate updates
-CLR     →      5V            Tied high (never clear outputs)
-DOUT    →      (NC)          Leave unconnected
+MOSI    →      Pin 11        SPI Data (shared with display/touch)
+/SYNC   →      Pin 16        Chip Select (dedicated for DAC, active LOW) **CHANGED FROM 14**
+/LDAC   →      GND           Tie LOW for immediate updates
+/CLR    →      5V            Tie HIGH to disable clear function
+RST     →      (NC)          Leave unconnected (optional reset)
 VOUTA   →      CV Out 1      Channel 0: Step 1 CV / LFO output
 VOUTB   →      CV Out 2      Channel 1: Step 2 CV
 VOUTC   →      CV Out 3      Channel 2: Step 3 CV
@@ -94,12 +93,14 @@ VOUTG   →      CV Out 7      Channel 6: Step 7 CV
 VOUTH   →      CV Out 8      Channel 7: Step 8 CV / Gate
 ```
 
-**DAC8568 Features:**
+**BOOST-DAC8568 Features:**
 - 16-bit resolution (65,535 steps) vs 12-bit on MCP4725 (4,096 steps)
 - 8 independent channels for polyphonic output
 - SPI interface (faster than I2C)
 - All channels update simultaneously
 - Shared SPI bus with display and touch (uses separate CS on Pin 14)
+- Onboard voltage reference (internal, configured for 0-5V range)
+- /LDAC and /CLR pins available for manual control or tie-off
 
 **Polyphonic Sequencing:**
 The Poliquencer outputs all 8 steps continuously on separate channels, enabling:
@@ -129,7 +130,7 @@ Connect to TRS/TRRS jacks, banana jacks, or directly to Eurorack patch cables.
 The SPI bus (MOSI=11, MISO=12, SCK=13) is shared between three devices:
 - **ILI9341 Display:** CS=10
 - **XPT2046 Touch:** CS=7
-- **DAC8568:** CS=14
+- **DAC8568:** CS=16 (changed from 14 to avoid conflicts)
 
 Each device has its own chip select pin for bus arbitration. Only one device is active at a time.
 
