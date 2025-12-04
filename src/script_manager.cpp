@@ -15,6 +15,7 @@
 // Script library definition
 const ScriptLibraryEntry ScriptManager::scriptLibrary[] = {
     {"Poliquencer", "Metropolix-style Artistic Sequencer", 2},
+    {"Symphony Chrod Sequencer", "4-Chord Harmonic Sequencer (Oxi-style)", 5},
     {"LFO", "Low Frequency Oscillator", 0},
     {"Envelope", "ADSR Envelope (Coming Soon)", 3},
     {"Clock", "Clock Divider (Coming Soon)", 4}
@@ -33,6 +34,7 @@ ScriptManager::ScriptManager()
         strcpy(scripts[i].output, "");
         lfoInstances[i] = nullptr;
         poliquencerInstances[i] = nullptr;
+        chordSequencerInstances[i] = nullptr;
         touchTestInstances[i] = nullptr;
     }
 }
@@ -130,6 +132,13 @@ bool ScriptManager::unloadScript(uint8_t slot) {
         poliquencerInstances[slot]->stop();
         delete poliquencerInstances[slot];
         poliquencerInstances[slot] = nullptr;
+    }
+    
+    // Clean up chord sequencer instance if exists
+    if (chordSequencerInstances[slot] != nullptr) {
+        chordSequencerInstances[slot]->stop();
+        delete chordSequencerInstances[slot];
+        chordSequencerInstances[slot] = nullptr;
     }
     
     // Clear script data
@@ -342,6 +351,29 @@ bool ScriptManager::loadScriptFromLibrary(uint8_t slot, uint8_t libraryIndex) {
         Serial.print("Loaded Poliquencer in slot ");
         Serial.println(slot);
         return true;
+    } else if (entry->scriptType == 5) {  // ChordSequencer
+        Serial.println("Creating chord sequencer instance...");
+        chordSequencerInstances[slot] = new ChordSequencerScript();
+        if (!chordSequencerInstances[slot]->begin()) {
+            Serial.println("ERROR: ChordSequencer begin() failed");
+            delete chordSequencerInstances[slot];
+            chordSequencerInstances[slot] = nullptr;
+            return false;
+        }
+        Serial.println("ChordSequencer begin() successful");
+        
+        // Set default tempo
+        chordSequencerInstances[slot]->setGlobalTempo(DEFAULT_CLOCK_BPM);
+        Serial.print("Tempo set to ");
+        Serial.println(DEFAULT_CLOCK_BPM);
+        
+        strcpy(scripts[slot].name, entry->name);
+        strcpy(scripts[slot].path, "builtin://chordseq");
+        scripts[slot].state = ScriptState::RUNNING;
+        
+        Serial.print("Loaded ChordSequencer in slot ");
+        Serial.println(slot);
+        return true;
     }
     
     // Other script types not yet implemented
@@ -389,6 +421,15 @@ void ScriptManager::executeScriptFrame(uint8_t slot) {
         
         // Update display output
         poliquencerInstances[slot]->getDisplayText(scripts[slot].output, sizeof(scripts[slot].output));
+        return;
+    }
+    
+    // Update chord sequencer if this slot has one
+    if (chordSequencerInstances[slot] != nullptr) {
+        chordSequencerInstances[slot]->update();
+        
+        // Update display output
+        chordSequencerInstances[slot]->getDisplayText(scripts[slot].output, sizeof(scripts[slot].output));
         return;
     }
     
@@ -452,6 +493,9 @@ void ScriptManager::setGlobalTempo(float bpm) {
         if (poliquencerInstances[i] != nullptr) {
             poliquencerInstances[i]->setGlobalTempo(bpm);
         }
+        if (chordSequencerInstances[i] != nullptr) {
+            chordSequencerInstances[i]->setGlobalTempo(bpm);
+        }
     }
 }
 
@@ -512,4 +556,28 @@ void ScriptManager::setPoliquencerStepGateMode(uint8_t slot, uint8_t step, uint8
 void ScriptManager::setPoliquencerDirection(uint8_t slot, uint8_t direction) {
     if (slot >= MAX_SCRIPTS || poliquencerInstances[slot] == nullptr) return;
     poliquencerInstances[slot]->setDirection((DirectionMode)direction);
+}
+
+// ========== CHORD SEQUENCER METHODS ==========
+
+bool ScriptManager::getChordSequencerData(uint8_t slot, uint8_t chordRoots[4], uint8_t chordTypes[4], uint8_t chordBeats[4], uint8_t* currentChordSlot, uint8_t* beatCounter) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return false;
+    }
+    
+    if (currentChordSlot) *currentChordSlot = chordSequencerInstances[slot]->getCurrentChordSlot();
+    if (beatCounter) *beatCounter = chordSequencerInstances[slot]->getBeatCounter();
+    
+    if (chordRoots && chordTypes && chordBeats) {
+        for (int i = 0; i < 4; i++) {
+            uint8_t root;
+            ChordType type;
+            chordSequencerInstances[slot]->getChord(i, &root, &type);
+            chordRoots[i] = root;
+            chordTypes[i] = (uint8_t)type;
+            chordBeats[i] = chordSequencerInstances[slot]->getChordBeats(i);
+        }
+    }
+    
+    return true;
 }

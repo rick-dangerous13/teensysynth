@@ -5,6 +5,7 @@
  */
 
 #include "ui.h"
+#include "script_manager.h"
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -62,6 +63,19 @@ UI::UI() : display(nullptr), clockTempo(DEFAULT_CLOCK_BPM), multitaskingMode(fal
             scriptSlots[i].lastSeqStepValues[j] = 0;
             scriptSlots[i].lastSeqStepDurations[j] = 1;
             scriptSlots[i].lastSeqGateModes[j] = 0;
+        }
+        // ChordSequencer initialization
+        scriptSlots[i].currentChordSlot = 0;
+        scriptSlots[i].chordBeatCounter = 0;
+        scriptSlots[i].lastCurrentChordSlot = 255;  // 255 = uninitialized
+        scriptSlots[i].lastChordBeatCounter = 255;
+        for (int j = 0; j < 4; j++) {
+            scriptSlots[i].chordRoots[j] = 0;  // Default to C
+            scriptSlots[i].chordTypes[j] = 0;  // Default to major
+            scriptSlots[i].chordBeats[j] = 16;  // Default to 16 beats
+            scriptSlots[i].lastChordRoots[j] = 255;
+            scriptSlots[i].lastChordTypes[j] = 255;
+            scriptSlots[i].lastChordBeats[j] = 255;
         }
     }
     
@@ -147,6 +161,20 @@ void UI::showScriptSelectScreen() {
         }
         drawFooter("OK: load", "BACK: menu");
         lastMenuSelection = menuSelection;
+        
+        // Reset drawing state for all active scripts to force full redraw (only on initial display)
+        for (int i = 0; i < MAX_SCRIPTS; i++) {
+            if (scriptSlots[i].active) {
+                // Reset chord sequencer state
+                scriptSlots[i].lastCurrentChordSlot = 255;
+                scriptSlots[i].lastChordBeatCounter = 255;
+                // Reset poliquencer state
+                scriptSlots[i].lastSeqCurrentStep = 255;
+                scriptSlots[i].lastSeqCurrentBeat = 255;
+                // Reset LFO state
+                scriptSlots[i].lastLfoWaveType = 255;
+            }
+        }
     }
     
     // Always redraw script slots - only slot 0 for now
@@ -155,7 +183,7 @@ void UI::showScriptSelectScreen() {
     drawScriptSlot(0, true);  // Always selected since it's the only available slot
 }
 
-void UI::showScriptLibraryScreen() {
+void UI::showScriptLibraryScreen(ScriptManager* scriptMgr) {
     if (!display) return;
     
     // Note: menuItemCount should be set from main.cpp using script manager
@@ -174,21 +202,32 @@ void UI::showScriptLibraryScreen() {
         // Get actual script library items from script manager
         int16_t startY = 50;
         for (int i = 0; i < menuItemCount; i++) {
-            // Get library entry from script manager (needs to be passed in, use temp for now)
-            const char* scriptNames[] = {"Poliquencer", "LFO", "Envelope", "Clock"};
-            const char* name = (i < 4) ? scriptNames[i] : "Unknown";
+            const char* name = "Unknown";
+            if (scriptMgr) {
+                const ScriptLibraryEntry* entry = scriptMgr->getScriptLibraryEntry(i);
+                if (entry) name = entry->name;
+            }
             drawMenuItem(startY + i * MENU_ITEM_H, name, i == menuSelection);
         }
     } else if (lastMenuSelection != menuSelection) {
         // Only redraw the changed menu items
         int16_t startY = 50;
-        const char* scriptNames[] = {"Poliquencer", "LFO", "Envelope", "Clock"};
-        if (lastMenuSelection < 4) {
-            const char* name = scriptNames[lastMenuSelection];
+        
+        if (lastMenuSelection >= 0 && lastMenuSelection < menuItemCount) {
+            const char* name = "Unknown";
+            if (scriptMgr) {
+                const ScriptLibraryEntry* entry = scriptMgr->getScriptLibraryEntry(lastMenuSelection);
+                if (entry) name = entry->name;
+            }
             drawMenuItem(startY + lastMenuSelection * MENU_ITEM_H, name, false);
         }
-        if (menuSelection < 4) {
-            const char* name = scriptNames[menuSelection];
+        
+        if (menuSelection >= 0 && menuSelection < menuItemCount) {
+            const char* name = "Unknown";
+            if (scriptMgr) {
+                const ScriptLibraryEntry* entry = scriptMgr->getScriptLibraryEntry(menuSelection);
+                if (entry) name = entry->name;
+            }
             drawMenuItem(startY + menuSelection * MENU_ITEM_H, name, true);
         }
     }
@@ -444,6 +483,9 @@ void UI::drawScriptSlot(uint8_t slot, bool selected) {
         if (scriptSlots[slot].scriptType == 2) {
             // Poliquencer title at top
             display->drawText(x + 20, y + 5, "POLIQUENCER", COLOR_FG, FONT_SMALL);
+        } else if (scriptSlots[slot].scriptType == 5) {
+            // Symphony chord sequencer title, same size/position as poliquencer
+            display->drawText(x + 20, y + 5, "SYMPHONY CHROD SEQUENCER", COLOR_FG, FONT_SMALL);
         } else {
             display->drawText(x + 20, y + 5, scriptSlots[slot].name, COLOR_FG, FONT_MEDIUM);
         }
@@ -606,6 +648,11 @@ void UI::drawScriptSlot(uint8_t slot, bool selected) {
             int16_t contentY = y + 20;
             int16_t contentH = h - 20;  // Adjusted for button strip
             drawPoliquencerSequencer(slot, x, contentY, w, contentH);
+        } else if (scriptSlots[slot].scriptType == 5) {
+            // ChordSequencer - Oxi One style chord progression display
+            int16_t contentY = y + 25;
+            int16_t contentH = h - 25;  // Adjusted for button strip
+            drawChordSequencer(slot, x, contentY, w, contentH);
         } else if (scriptSlots[slot].scriptType == 3) {
             // Touch Calibration Test - show targets
             display->fillRect(x + 6, y + 25, w - 12, h - 30, COLOR_BG);
@@ -693,6 +740,223 @@ void UI::drawFooter(const char* leftLabel, const char* rightLabel) {
     }
     
     drawButtonStrip(btn1, btn2, btn3, btn4);
+}
+
+void UI::drawChordSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h) {
+    if (!display || slot >= MAX_SCRIPTS) return;
+    
+    bool firstDraw = (scriptSlots[slot].lastCurrentChordSlot == 255);
+    
+    // Note names for display
+    const char* noteNames[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+    const char* typeNames[] = {"maj", "min"};
+    
+    // Calculate total beats
+    uint16_t totalBeats = 0;
+    for (int i = 0; i < 4; i++) {
+        totalBeats += scriptSlots[slot].chordBeats[i];
+    }
+    if (totalBeats == 0) totalBeats = 1;  // Avoid division by zero
+    
+    // Area chart layout: horizontal bars with width proportional to beat count
+    int16_t chartH = 56;  // Reduced height (80% of previous)
+    int16_t chartY = y + (h - chartH) / 2; // Vertically center within slot
+    int16_t chartStartX = x + 10;
+    int16_t chartW = w - 20;  // Available width
+
+    // Dot rendering helpers (span exactly the chord band width)
+    int16_t dotY = chartY + chartH - 8;   // Lower so it stays clear of text
+    int16_t dotStartX = chartStartX;
+
+
+    // Helper: compute absolute beat index for current chord/beat
+    auto getAbsoluteBeat = [&](void) -> uint16_t {
+        uint16_t offset = 0;
+        for (uint8_t i = 0; i < scriptSlots[slot].currentChordSlot; i++) {
+            offset += scriptSlots[slot].chordBeats[i];
+        }
+        return offset + scriptSlots[slot].chordBeatCounter;
+    };
+
+    // Helper: find chord index for a given absolute beat
+    auto chordForBeat = [&](uint16_t beatIndex) -> uint8_t {
+        uint16_t running = 0;
+        for (uint8_t i = 0; i < 4; i++) {
+            uint16_t next = running + scriptSlots[slot].chordBeats[i];
+            if (beatIndex < next) return i;
+            running = next;
+        }
+        return 3; // fallback
+    };
+
+    // Helper: redraw all dots across all chords with current highlight
+    auto redrawDots = [&]() {
+        uint16_t absoluteCurrent = getAbsoluteBeat();
+        uint16_t totalSpan = (totalBeats > 1) ? (totalBeats - 1) : 1;
+
+        // First pass: reset dot area using underlying chord fill color per dot
+        for (uint16_t b = 0; b < totalBeats; b++) {
+            uint8_t chordIdx = chordForBeat(b);
+            bool isCurrentChord = (chordIdx == scriptSlots[slot].currentChordSlot);
+            uint16_t fillColor = isCurrentChord ? COLOR_ACCENT : 0x5D9F;
+            int16_t dotX = dotStartX + (int32_t)((chartW * b) / totalSpan);
+            display->fillCircle(dotX, dotY, 3, fillColor);
+        }
+
+        // Second pass: draw dots with highlight for current beat
+        for (uint16_t b = 0; b < totalBeats; b++) {
+            int16_t dotX = dotStartX + (int32_t)((chartW * b) / totalSpan);
+            bool isCurrentBeat = (b == absoluteCurrent);
+            int16_t dotRadius = isCurrentBeat ? 3 : 2;
+            display->fillCircle(dotX, dotY, dotRadius, COLOR_BG);
+        }
+    };
+    
+    if (firstDraw) {
+        // Clear content area
+        display->fillRect(x + 6, y, w - 12, h, COLOR_BG);
+        
+        // Draw area chart: each chord gets proportional width
+        int16_t currentX = chartStartX;
+        for (int i = 0; i < 4; i++) {
+            // Calculate width based on beat proportion
+            int16_t segmentW = (chartW * scriptSlots[slot].chordBeats[i]) / totalBeats;
+            if (i == 3) segmentW = chartStartX + chartW - currentX;  // Last segment fills remaining
+            
+            bool isCurrent = (i == scriptSlots[slot].currentChordSlot);
+            uint16_t fillColor = isCurrent ? COLOR_ACCENT : 0x5D9F;  // Cyan or light blue
+            
+            // Draw filled rounded rectangle (no border)
+            display->fillRoundRect(currentX, chartY, segmentW, chartH, 8, fillColor);
+            
+            // Draw chord name: root larger, type smaller; centered as a group
+            char rootLabel[4];
+            char typeLabel[4];
+            snprintf(rootLabel, sizeof(rootLabel), "%s", noteNames[scriptSlots[slot].chordRoots[i]]);
+            snprintf(typeLabel, sizeof(typeLabel), "%s", typeNames[scriptSlots[slot].chordTypes[i]]);
+
+            int16_t bxR, byR, bxT, byT; uint16_t bwR, bhR, bwT, bhT;
+            display->getTextBounds(rootLabel, 0, 0, &bxR, &byR, &bwR, &bhR, FONT_MEDIUM);
+            display->getTextBounds(typeLabel, 0, 0, &bxT, &byT, &bwT, &bhT, FONT_SMALL);
+
+            int16_t totalW = bwR + 2 + bwT;
+            int16_t textX = currentX + (segmentW - totalW) / 2 - bxR;
+            int16_t textY = chartY + (chartH - max((uint16_t)bhR, (uint16_t)bhT)) / 2 - min(byR, byT);
+
+            display->drawText(textX, textY, rootLabel, COLOR_BG, FONT_MEDIUM);
+            display->drawText(textX + bwR + 2 - bxT, textY, typeLabel, COLOR_BG, FONT_SMALL);
+
+            currentX += segmentW;
+        }
+        
+        // Draw unified beat dots string across all chords
+        redrawDots();
+
+        // Mark as initialized
+        scriptSlots[slot].lastCurrentChordSlot = scriptSlots[slot].currentChordSlot;
+        scriptSlots[slot].lastChordBeatCounter = scriptSlots[slot].chordBeatCounter;
+        for (int i = 0; i < 4; i++) {
+            scriptSlots[slot].lastChordRoots[i] = scriptSlots[slot].chordRoots[i];
+            scriptSlots[slot].lastChordTypes[i] = scriptSlots[slot].chordTypes[i];
+            scriptSlots[slot].lastChordBeats[i] = scriptSlots[slot].chordBeats[i];
+        }
+    } else {
+        // Check if beats changed - need full redraw of chart
+        bool beatsChanged = false;
+        for (int i = 0; i < 4; i++) {
+            if (scriptSlots[slot].chordBeats[i] != scriptSlots[slot].lastChordBeats[i]) {
+                beatsChanged = true;
+                break;
+            }
+        }
+        
+        if (beatsChanged) {
+            // Redraw entire area chart
+            display->fillRect(chartStartX, chartY, chartW, chartH, COLOR_BG);
+            
+            int16_t currentX = chartStartX;
+            for (int i = 0; i < 4; i++) {
+                int16_t segmentW = (chartW * scriptSlots[slot].chordBeats[i]) / totalBeats;
+                if (i == 3) segmentW = chartStartX + chartW - currentX;
+                
+                bool isCurrent = (i == scriptSlots[slot].currentChordSlot);
+                uint16_t fillColor = isCurrent ? COLOR_ACCENT : 0x5D9F;
+                
+                display->fillRoundRect(currentX, chartY, segmentW, chartH, 8, fillColor);
+                
+                char rootLabel[4];
+                char typeLabel[4];
+                snprintf(rootLabel, sizeof(rootLabel), "%s", noteNames[scriptSlots[slot].chordRoots[i]]);
+                snprintf(typeLabel, sizeof(typeLabel), "%s", typeNames[scriptSlots[slot].chordTypes[i]]);
+
+                int16_t bxR, byR, bxT, byT; uint16_t bwR, bhR, bwT, bhT;
+                display->getTextBounds(rootLabel, 0, 0, &bxR, &byR, &bwR, &bhR, FONT_MEDIUM);
+                display->getTextBounds(typeLabel, 0, 0, &bxT, &byT, &bwT, &bhT, FONT_SMALL);
+
+                int16_t totalW = bwR + 2 + bwT;
+                int16_t textX = currentX + (segmentW - totalW) / 2 - bxR;
+                int16_t textY = chartY + (chartH - max((uint16_t)bhR, (uint16_t)bhT)) / 2 - min(byR, byT);
+
+                display->drawText(textX, textY, rootLabel, COLOR_BG, FONT_MEDIUM);
+                display->drawText(textX + bwR + 2 - bxT, textY, typeLabel, COLOR_BG, FONT_SMALL);
+                
+                currentX += segmentW;
+            }
+            
+            for (int i = 0; i < 4; i++) {
+                scriptSlots[slot].lastChordBeats[i] = scriptSlots[slot].chordBeats[i];
+            }
+
+            // Redraw unified beat dots after beat count change
+            redrawDots();
+        }
+        
+        // Check if current chord changed (highlight change)
+        if (scriptSlots[slot].currentChordSlot != scriptSlots[slot].lastCurrentChordSlot) {
+            // Redraw both old and new segments with updated colors
+            int16_t currentX = chartStartX;
+            for (int i = 0; i < 4; i++) {
+                int16_t segmentW = (chartW * scriptSlots[slot].chordBeats[i]) / totalBeats;
+                if (i == 3) segmentW = chartStartX + chartW - currentX;
+                
+                if (i == scriptSlots[slot].lastCurrentChordSlot || i == scriptSlots[slot].currentChordSlot) {
+                    bool isCurrent = (i == scriptSlots[slot].currentChordSlot);
+                    uint16_t fillColor = isCurrent ? COLOR_ACCENT : 0x5D9F;
+                    
+                    display->fillRoundRect(currentX, chartY, segmentW, chartH, 8, fillColor);
+                    
+                    char rootLabel[4];
+                    char typeLabel[4];
+                    snprintf(rootLabel, sizeof(rootLabel), "%s", noteNames[scriptSlots[slot].chordRoots[i]]);
+                    snprintf(typeLabel, sizeof(typeLabel), "%s", typeNames[scriptSlots[slot].chordTypes[i]]);
+
+                    int16_t bxR, byR, bxT, byT; uint16_t bwR, bhR, bwT, bhT;
+                    display->getTextBounds(rootLabel, 0, 0, &bxR, &byR, &bwR, &bhR, FONT_MEDIUM);
+                    display->getTextBounds(typeLabel, 0, 0, &bxT, &byT, &bwT, &bhT, FONT_SMALL);
+
+                    int16_t totalW = bwR + 2 + bwT;
+                    int16_t textX = currentX + (segmentW - totalW) / 2 - bxR;
+                    int16_t textY = chartY + (chartH - max((uint16_t)bhR, (uint16_t)bhT)) / 2 - min(byR, byT);
+
+                    display->drawText(textX, textY, rootLabel, COLOR_BG, FONT_MEDIUM);
+                    display->drawText(textX + bwR + 2 - bxT, textY, typeLabel, COLOR_BG, FONT_SMALL);
+                }
+                
+                currentX += segmentW;
+            }
+            
+            scriptSlots[slot].lastCurrentChordSlot = scriptSlots[slot].currentChordSlot;
+
+            // Redraw dots to ensure highlight sits above updated segments
+            redrawDots();
+        }
+        
+        // Update beat dots when beat counter changes
+        if (scriptSlots[slot].chordBeatCounter != scriptSlots[slot].lastChordBeatCounter) {
+            redrawDots();
+            scriptSlots[slot].lastChordBeatCounter = scriptSlots[slot].chordBeatCounter;
+        }
+    }
 }
 
 void UI::drawButtonStrip(const char* btn1, const char* btn2, const char* btn3, const char* btn4) {
@@ -1160,6 +1424,18 @@ void UI::cycleDirection(uint8_t slot) {
     if (slot >= MAX_SCRIPTS) return;
     
     scriptSlots[slot].seqDirection = (scriptSlots[slot].seqDirection + 1) % 4;
+}
+
+void UI::updateChordSequencer(uint8_t slot, uint8_t chordRoots[4], uint8_t chordTypes[4], uint8_t chordBeats[4], uint8_t currentChordSlot, uint8_t beatCounter) {
+    if (slot >= MAX_SCRIPTS) return;
+    
+    for (int i = 0; i < 4; i++) {
+        scriptSlots[slot].chordRoots[i] = chordRoots[i];
+        scriptSlots[slot].chordTypes[i] = chordTypes[i];
+        scriptSlots[slot].chordBeats[i] = chordBeats[i];
+    }
+    scriptSlots[slot].currentChordSlot = currentChordSlot;
+    scriptSlots[slot].chordBeatCounter = beatCounter;
 }
 
 void UI::drawPoliquencerSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h) {

@@ -264,6 +264,16 @@ void handleScriptSelectState() {
                 if (scriptManager.getPoliquencerData(i, &currentStep, &currentBeat, stepValues, stepDurations, gateModes, &direction, &steamTrigger)) {
                     ui.updatePoliquencerSequencer(i, currentStep, currentBeat, stepValues, stepDurations, gateModes, direction, steamTrigger);
                 }
+                
+                // Update chord sequencer data if it's a chord sequencer
+                uint8_t chordRoots[4];
+                uint8_t chordTypes[4];
+                uint8_t chordBeats[4];
+                uint8_t currentChordSlot;
+                uint8_t beatCounter;
+                if (scriptManager.getChordSequencerData(i, chordRoots, chordTypes, chordBeats, &currentChordSlot, &beatCounter)) {
+                    ui.updateChordSequencer(i, chordRoots, chordTypes, chordBeats, currentChordSlot, beatCounter);
+                }
             }
         }
         lastRefresh = millis();
@@ -476,7 +486,7 @@ void handleScriptSelectState() {
         currentState = AppState::SCRIPT_LIBRARY;
         ui.resetMenuTracking();
         ui.setMenuItemCount(scriptManager.getScriptLibraryCount());
-        ui.showScriptLibraryScreen();
+        ui.showScriptLibraryScreen(&scriptManager);
     }
     
     // Handle Back button - go back to where we came from
@@ -498,7 +508,7 @@ void handleScriptSelectState() {
             ui.showSettingsScreen();
         } else if (destination == AppState::SCRIPT_LIBRARY) {
             ui.setMenuItemCount(scriptManager.getScriptLibraryCount());
-            ui.showScriptLibraryScreen();
+            ui.showScriptLibraryScreen(&scriptManager);
         }
     }
 }
@@ -508,7 +518,7 @@ void handleScriptLibraryState() {
     int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
         ui.scrollMenu(scrollDelta);
-        ui.showScriptLibraryScreen();  // Partial redraw
+        ui.showScriptLibraryScreen(&scriptManager);  // Partial redraw
     }
     
     // Handle OK button - load selected script

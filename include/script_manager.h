@@ -14,6 +14,7 @@
 #include "config.h"
 #include "lfo_script.h"
 #include "poliquencer_script.h"
+#include "chord_sequencer_script.h"
 #include "touch_test_script.h"
 
 // Script library entry
@@ -88,6 +89,9 @@ public:
     // Poliquencer access
     bool getPoliquencerData(uint8_t slot, uint8_t* currentStep, uint8_t* currentBeat, int8_t stepValues[8], uint8_t stepDurations[8], uint8_t gateModes[8], uint8_t* direction, bool* steamTrigger);
     void setPoliquencerStepValue(uint8_t slot, uint8_t step, int8_t value);
+    
+    // ChordSequencer access
+    bool getChordSequencerData(uint8_t slot, uint8_t chordRoots[4], uint8_t chordTypes[4], uint8_t chordBeats[4], uint8_t* currentChordSlot, uint8_t* beatCounter);
     void setPoliquencerStepDuration(uint8_t slot, uint8_t step, uint8_t duration);
     void setPoliquencerStepGateMode(uint8_t slot, uint8_t step, uint8_t gateMode);
     void setPoliquencerDirection(uint8_t slot, uint8_t direction);
@@ -100,6 +104,7 @@ private:
     ScriptInfo scripts[MAX_SCRIPTS];
     LFOScript* lfoInstances[MAX_SCRIPTS];  // LFO instance per slot
     PoliquencerScript* poliquencerInstances[MAX_SCRIPTS];  // Poliquencer instance per slot
+    ChordSequencerScript* chordSequencerInstances[MAX_SCRIPTS];  // Chord sequencer instance per slot
     TouchTestScript* touchTestInstances[MAX_SCRIPTS];  // Touch test instance per slot
     
     // Shared DAC instances (2x MCP4725)

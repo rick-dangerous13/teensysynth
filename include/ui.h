@@ -11,6 +11,8 @@
 #include "config.h"
 #include "display.h"
 
+class ScriptManager;  // Forward declaration
+
 // Menu item structure
 struct MenuItem {
     const char* label;
@@ -57,6 +59,18 @@ struct ScriptSlot {
     uint8_t lastSeqEditMode;
     uint8_t lastSeqDirection;
     uint8_t lastSeqCurrentBeat;
+    // ChordSequencer specific
+    uint8_t chordRoots[4];       // Root notes (0-11) for 4 chords
+    uint8_t chordTypes[4];       // 0=major, 1=minor
+    uint8_t chordBeats[4];       // Beats per chord (1-32)
+    uint8_t currentChordSlot;    // Current playing chord (0-3)
+    uint8_t chordBeatCounter;    // Beat within current chord
+    // Previous state tracking for chord sequencer
+    uint8_t lastChordRoots[4];
+    uint8_t lastChordTypes[4];
+    uint8_t lastChordBeats[4];
+    uint8_t lastCurrentChordSlot;
+    uint8_t lastChordBeatCounter;
 };
 
 class UI {
@@ -69,7 +83,7 @@ public:
     void showWelcomeScreen();
     void showMainMenu();
     void showScriptSelectScreen();
-    void showScriptLibraryScreen();  // Browse available scripts
+    void showScriptLibraryScreen(class ScriptManager* scriptMgr = nullptr);  // Browse available scripts
     void showScriptRunningScreen();
     void showSettingsScreen();
     void showAboutScreen();
@@ -133,6 +147,9 @@ public:
     uint8_t getToggleDirection(uint8_t slot, uint8_t step) const { return (slot < MAX_SCRIPTS && step < 8) ? scriptSlots[slot].seqToggleDirection[step] : 0; }
     void setToggleDirection(uint8_t slot, uint8_t step, uint8_t dir) { if (slot < MAX_SCRIPTS && step < 8) scriptSlots[slot].seqToggleDirection[step] = dir; }
     
+    // ChordSequencer
+    void updateChordSequencer(uint8_t slot, uint8_t chordRoots[4], uint8_t chordTypes[4], uint8_t chordBeats[4], uint8_t currentChordSlot, uint8_t beatCounter);
+    
 private:
     Display* display;
     
@@ -160,6 +177,7 @@ private:
     void drawSequencerSliders(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
     void drawSequencerDials(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
     void drawPoliquencerSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
+    void drawChordSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
     void drawHeader(const char* title);
     void drawFooter(const char* leftLabel, const char* rightLabel);
     
