@@ -52,7 +52,6 @@ void InputHandler::begin() {
     pinMode(ENC_DT, INPUT_PULLUP);
     pinMode(ENC_SW, INPUT_PULLUP);
     
-    // Initialize touchscreen (polling mode - no IRQ pin)
     Serial.println("Initializing touch screen...");
     
     // Configure CS pin as output and set high (inactive)
@@ -70,13 +69,6 @@ void InputHandler::begin() {
     }
     
     Serial.println("Touch initialized");
-    
-    // Read initial encoder state (2-bit value from both pins)
-    uint8_t s = 0;
-    if (digitalRead(ENC_CLK)) s |= 1;
-    if (digitalRead(ENC_DT)) s |= 2;
-    lastEncoderCLK = s;
-    lastEncoderDT = 0;  // Use this for previous state
 }
 
 void InputHandler::update() {

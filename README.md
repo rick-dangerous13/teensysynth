@@ -18,7 +18,16 @@ A Teensy 4.1-based synthesizer in Doepfer Eurorack format with a Norns Shield-st
 - ILI9341 2.8" TFT Display (320x240, SPI)
 - 2 momentary push buttons
 - 1 rotary encoder with push button (DEBO ENCODER)
+- 2x MCP4725 12-bit I2C DACs for CV/Gate output
 - Eurorack power supply (±12V)
+
+## Documentation
+
+- **[MCP4725 Quick Start](MCP4725_QUICK_START.md)** - Print this! One-page wiring reference
+- **[MCP4725 Setup Guide](MCP4725_SETUP_GUIDE.md)** - Complete wiring & configuration guide
+- **[MCP4725 Address Guide](MCP4725_ADDRESS_GUIDE.md)** - Deep dive on I2C addressing
+- **[Hardware Wiring](HARDWARE_WIRING.md)** - Full pin assignments and troubleshooting
+- **[Design Principles](docs/DESIGN_PRINCIPLES.md)** - Architecture and design goals
 
 ### Pin Connections
 

@@ -3,14 +3,15 @@
  * 
  * Metropolix-inspired 8-step sequencer with artistic aesthetic
  * Features: Gate modes (normal/skip/slide), direction control, ratcheting
- * 8-channel CV output: Each step has independent CV output for polyphonic capability
+ * 2-channel CV output: DAC1 for pitch CV, DAC2 for gate CV
  */
 
 #ifndef STEAMPUNQUENCER_SCRIPT_H
 #define STEAMPUNQUENCER_SCRIPT_H
 
 #include <Arduino.h>
-#include "dac8568.h"
+#include <Wire.h>
+#include <Adafruit_MCP4725.h>
 #include "config.h"
 
 // Gate modes for each step
@@ -41,8 +42,8 @@ public:
     // Stop the sequencer
     void stop();
     
-    // Set shared DAC instance
-    void setDAC(DAC8568* dacPtr);
+    // Set shared DAC instances
+    void setDAC(Adafruit_MCP4725* dac1Ptr, Adafruit_MCP4725* dac2Ptr);
     
     // Step parameters
     void setStepValue(uint8_t step, int8_t semitones); // -12 to +12 (2 octaves)
@@ -73,8 +74,9 @@ public:
     void getDisplayText(char* buffer, size_t bufferSize);
     
 private:
-    // DAC object (shared, 8 channels)
-    DAC8568* dac;
+    // DAC objects (2x MCP4725, 12-bit)
+    Adafruit_MCP4725* dac1;  // Pitch CV output
+    Adafruit_MCP4725* dac2;  // Gate CV output
     bool dacInitialized;
     
     // Sequencer state

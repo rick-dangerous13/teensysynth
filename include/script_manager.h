@@ -9,8 +9,9 @@
 #define SCRIPT_MANAGER_H
 
 #include <Arduino.h>
+#include <Wire.h>
+#include <Adafruit_MCP4725.h>
 #include "config.h"
-#include "dac8568.h"
 #include "lfo_script.h"
 #include "poliquencer_script.h"
 #include "touch_test_script.h"
@@ -92,7 +93,8 @@ public:
     void setPoliquencerDirection(uint8_t slot, uint8_t direction);
     
     // DAC access (for testing)
-    DAC8568* getDAC() { return dac; }
+    Adafruit_MCP4725* getDAC1() { return &dac1; }
+    Adafruit_MCP4725* getDAC2() { return &dac2; }
 
 private:
     ScriptInfo scripts[MAX_SCRIPTS];
@@ -100,8 +102,9 @@ private:
     PoliquencerScript* poliquencerInstances[MAX_SCRIPTS];  // Poliquencer instance per slot
     TouchTestScript* touchTestInstances[MAX_SCRIPTS];  // Touch test instance per slot
     
-    // Shared DAC instance (8 channels)
-    DAC8568* dac;
+    // Shared DAC instances (2x MCP4725)
+    Adafruit_MCP4725 dac1;  // CV output (address 0x60)
+    Adafruit_MCP4725 dac2;  // Gate/CV output (address 0x61)
     bool dacInitialized;
     
     // Script library

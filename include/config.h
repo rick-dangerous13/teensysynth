@@ -41,9 +41,9 @@
 // ============================================================================
 // Button Configuration
 // ============================================================================
-#define BTN_OK    2    // Primary OK button pin
+#define BTN_OK    2    // OK button pin (active LOW with pull-up)
 #define BTN_OK2   15   // Secondary OK button pin (alternative)
-#define BTN_BACK  3    // Back button pin
+#define BTN_BACK  3    // Back button pin (active LOW with pull-up)
 
 // Button debounce settings
 #define DEBOUNCE_DELAY 50  // milliseconds
@@ -82,57 +82,26 @@
 //   T_CLK  -> Pin 13 (SCK - shared with display)
 
 // ============================================================================
-// DAC8568 Configuration (8-Channel CV Output)
+// MCP4725 DAC Configuration (I2C CV Outputs)
 // ============================================================================
-// Texas Instruments DAC8568: 16-bit, 8-channel DAC with SPI interface
-// Provides 8 independent CV outputs (0-5V) for polyphonic or multi-parameter control
+// Using 2x MCP4725 12-bit I2C DACs for CV outputs
+// MCP4725: 12-bit resolution, single channel, I2C interface
+// Address: 0x60 (A0=GND), 0x61 (A0=VDD) or 0x62, 0x63 with different addressing
 
-#define DAC_CS        16   // DAC chip select pin (/SYNC)
-#define DAC_MOSI      26   // SPI1 MOSI (dedicated for DAC, avoids display conflicts)
-#define DAC_SCK       27   // SPI1 SCK (dedicated for DAC)
-#define DAC_RST       17   // DAC reset pin (optional - can tie to 5V if not used)
-// DAC uses SPI1 bus to avoid conflicts with display/touch (which use SPI)
+#define MCP4725_ADDR_1  0x60   // First MCP4725 address (CV Out 1)
+#define MCP4725_ADDR_2  0x61   // Second MCP4725 address (CV Out 2)
 
-// DAC8568 Wiring:
-//   DAC8568 VDD    -> Teensy 5V
-//   DAC8568 VSS    -> Teensy GND
-//   DAC8568 VREFIN -> 5V (external reference for 0-5V output range)
-//   DAC8568 VREFOUT -> Not connected (or 100nF capacitor to GND if using internal ref)
-//   DAC8568 SCLK   -> Teensy Pin 27 (SCK1 - dedicated SPI1 bus)
-//   DAC8568 DIN    -> Teensy Pin 26 (MOSI1 - dedicated SPI1 bus)
-//   DAC8568 SYNC   -> Teensy Pin 16 (DAC_CS - chip select)
-//   DAC8568 LDAC   -> Teensy GND (tied low for immediate updates)
-//   DAC8568 CLR    -> Teensy 5V (tied high, never clear)
-//   DAC8568 DOUT   -> Not connected (or Pin 12 if daisy-chaining)
-//   DAC8568 VOUTA-H -> CV outputs 0-7 (0-5V analog)
-//
-// Channel assignment:
-//   Channel 0 (A): Poliquencer Step 1 CV / LFO primary output
-//   Channel 1 (B): Poliquencer Step 2 CV
-//   Channel 2 (C): Poliquencer Step 3 CV
-//   Channel 3 (D): Poliquencer Step 4 CV
-//   Channel 4 (E): Poliquencer Step 5 CV
-//   Channel 5 (F): Poliquencer Step 6 CV
-//   Channel 6 (G): Poliquencer Step 7 CV
-//   Channel 7 (H): Poliquencer Step 8 CV / Gate output
-//
-// Note: DAC uses SPI1 (Pin 26/27) to avoid conflicts with display/touch (SPI0 Pin 11/13)
-//       This completely isolates the DAC from display communication
-// 
-#define DAC_MAX_VALUE 65535     // 16-bit DAC (0-65535)
-#define DAC_MAX_VOLTAGE 5.0f    // Maximum output voltage (with 5V reference)
-#define GATE_HIGH_VOLTAGE 5.0f  // Gate high voltage
-#define GATE_LOW_VOLTAGE 0.0f   // Gate low voltage
+// MCP4725 Wiring (per chip):
+//   VCC -> Teensy 5V (for full 0-5V output range)
+//   GND -> Teensy GND
+//   SDA -> Teensy Pin 18 (I2C SDA)
+//   SCL -> Teensy Pin 19 (I2C SCL)
 
-// DAC8568 channel definitions for easy reference
-#define DAC_CH_STEP1    0  // Poliquencer step 1 / LFO output
-#define DAC_CH_STEP2    1  // Poliquencer step 2
-#define DAC_CH_STEP3    2  // Poliquencer step 3
-#define DAC_CH_STEP4    3  // Poliquencer step 4
-#define DAC_CH_STEP5    4  // Poliquencer step 5
-#define DAC_CH_STEP6    5  // Poliquencer step 6
-#define DAC_CH_STEP7    6  // Poliquencer step 7
-#define DAC_CH_STEP8    7  // Poliquencer step 8 / Gate output
+// DAC specifications
+#define DAC_MAX_VALUE    4095      // 12-bit DAC (0-4095)
+#define DAC_MAX_VOLTAGE  5.0f      // Maximum output voltage
+#define GATE_HIGH_VOLTAGE 5.0f     // Gate high voltage
+#define GATE_LOW_VOLTAGE 0.0f      // Gate low voltage
 
 // ============================================================================
 // Script Manager Configuration

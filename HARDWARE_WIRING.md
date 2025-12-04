@@ -1,5 +1,20 @@
 # Polyphonion Hardware Wiring Guide
 
+## Quick Reference: MCP4725 I2C Addressing
+
+**How to Address Two Separate DACs on the Same I2C Bus:**
+
+The MCP4725 has ONE address pin (**A0**) that determines the I2C address:
+
+| Configuration | A0 Pin Connection | I2C Address | Purpose |
+|---------------|-------------------|-------------|---------|
+| DAC #1        | Connected to **GND** | **0x60** | CV Output (Pitch) |
+| DAC #2        | Connected to **VCC (5V)** | **0x61** | Gate / Modulation |
+
+Both DACs share **SDA (Pin 18)** and **SCL (Pin 19)** — the I2C protocol automatically routes commands to the correct DAC based on address.
+
+**Important:** The A0 pin must be explicitly connected (not floating). Floating pins cause the DAC to be unaddressable.
+
 ## Pin Assignment Summary
 
 ### Teensy 4.1 Pin Usage
@@ -70,69 +85,149 @@ BACK      Pin 3 to GND (momentary, active low)
 
 Both buttons use internal pull-up resistors. Pressing button connects pin to GND.
 
-### 4. BOOST-DAC8568 Board - 8-Channel 16-bit DAC (CV Outputs)
+### 4. MCP4725 12-bit I2C DAC (CV Outputs)
+**Current Configuration:** 2x MCP4725 DACs on I2C bus for CV output
+
+#### Physical Wiring (Each MCP4725 Module)
+**Your module pin labels (may vary by breakout board):**
 ```
-BOOST-DAC8568  Teensy 4.1    Notes
--------------  ----------    -----
-5V      →      5V            Power supply (CRITICAL: Must be 5V)
-GND     →      GND           Ground (2 GND pins available on board)
-3v3     →      (NC)          Leave unconnected (not needed)
-SCLK    →      Pin 13        SPI Clock (shared with display/touch)
-MOSI    →      Pin 11        SPI Data (shared with display/touch)
-/SYNC   →      Pin 16        Chip Select (dedicated for DAC, active LOW) **CHANGED FROM 14**
-/LDAC   →      GND           Tie LOW for immediate updates
-/CLR    →      5V            Tie HIGH to disable clear function
-RST     →      (NC)          Leave unconnected (optional reset)
-VOUTA   →      CV Out 1      Channel 0: Step 1 CV / LFO output
-VOUTB   →      CV Out 2      Channel 1: Step 2 CV
-VOUTC   →      CV Out 3      Channel 2: Step 3 CV
-VOUTD   →      CV Out 4      Channel 3: Step 4 CV
-VOUTE   →      CV Out 5      Channel 4: Step 5 CV
-VOUTF   →      CV Out 6      Channel 5: Step 6 CV
-VOUTG   →      CV Out 7      Channel 6: Step 7 CV
-VOUTH   →      CV Out 8      Channel 7: Step 8 CV / Gate
+MCP4725 Pin    Teensy 4.1    Notes
+-----------    ----------    -----
+OUT     →      TRRS Jack     CV Output (0-5V)
+GND     →      GND           Ground
+SCL     →      Pin 19        I2C Clock (I2C0)
+SDA     →      Pin 18        I2C Data (I2C0)
+VCC     →      5V            Power (for full 0-5V output range)
 ```
 
-**BOOST-DAC8568 Features:**
-- 16-bit resolution (65,535 steps) vs 12-bit on MCP4725 (4,096 steps)
-- 8 independent channels for polyphonic output
-- SPI interface (faster than I2C)
-- All channels update simultaneously
-- Shared SPI bus with display and touch (uses separate CS on Pin 14)
-- Onboard voltage reference (internal, configured for 0-5V range)
-- /LDAC and /CLR pins available for manual control or tie-off
-
-**Polyphonic Sequencing:**
-The Poliquencer outputs all 8 steps continuously on separate channels, enabling:
-- Polyphonic patches (8-voice polyphony)
-- Multi-destination modulation (8 parameters simultaneously)
-- Parallel sequencing patterns
-
-### 5. CV Output Connections
-Each DAC8568 channel provides 0-5V CV output:
+**Standard MCP4725 pinout (for reference):**
 ```
-Channel    Output        Use Case
--------    ------        --------
-0 (A)      CV Out 1      Poliquencer Step 1 / LFO primary
-1 (B)      CV Out 2      Poliquencer Step 2
-2 (C)      CV Out 3      Poliquencer Step 3
-3 (D)      CV Out 4      Poliquencer Step 4
-4 (E)      CV Out 5      Poliquencer Step 5
-5 (F)      CV Out 6      Poliquencer Step 6
-6 (G)      CV Out 7      Poliquencer Step 7
-7 (H)      CV Out 8      Poliquencer Step 8 / Gate
+Pin 1 (VCC)  → 5V
+Pin 2 (GND)  → GND
+Pin 3 (SDA)  → Pin 18
+Pin 4 (SCL)  → Pin 19
+Pin 5 (A0)   → Address select (GND or VCC)
+Pin 6 (OUT)  → Signal output
 ```
 
-Connect to TRS/TRRS jacks, banana jacks, or directly to Eurorack patch cables.
+#### I2C Address Configuration (Critical for Separate Addressing)
+MCP4725 has ONE address pin: **A0**
 
-## SPI Bus Configuration
+**How to set different addresses:**
+- **MCP4725 #1 (0x60):** Connect A0 pin to **GND**
+- **MCP4725 #2 (0x61):** Connect A0 pin to **VCC (5V)**
 
-The SPI bus (MOSI=11, MISO=12, SCK=13) is shared between three devices:
-- **ILI9341 Display:** CS=10
-- **XPT2046 Touch:** CS=7
-- **DAC8568:** CS=16 (changed from 14 to avoid conflicts)
+```
+I2C Address    A0 Pin        Use Case
+-----------    ------        --------
+0x60           GND           DAC 1 - Pitch/CV Out
+0x61           VCC (5V)      DAC 2 - Gate/Modulation Out
+```
 
-Each device has its own chip select pin for bus arbitration. Only one device is active at a time.
+**Both DACs share the same SDA (18) and SCL (19) pins** - they are independent devices distinguished by address.
+
+**Available Addresses** (if using 3+ DACs in future):
+- 0x60 (A0=GND)
+- 0x61 (A0=VCC)
+- 0x62 (not on standard MCP4725, requires external address pins)
+- 0x63 (not on standard MCP4725, requires external address pins)
+
+> **Note:** Standard MCP4725 can only address 0x60 and 0x61. For more than 2 DACs, use MCP4725A with selectable A0/A1 pins, or use a different DAC like MCP4726 (4 addresses) or DAC8568 (8 channels, SPI).
+
+#### TRRS Jack Wiring (4-Contact Stereo Jack)
+```
+TRRS Jack      Signal
+---------      ------
+Sleeve         GND
+Ring 1         CV Out 1 (from MCP4725 #1)
+Ring 2         CV Out 2 (from MCP4725 #2)
+Tip            GND (or unused)
+```
+
+**Physical appearance:**
+```
+    Tip (top)      → GND
+    |
+    Ring 2 (mid)   → CV Out 2
+    |
+    Ring 1 (mid)   → CV Out 1
+    |
+    Sleeve (bottom)→ GND
+```
+
+#### Output Voltage Characteristics
+- **Resolution:** 12-bit (4096 steps)
+- **Output Range:** 0-5V DC
+- **Settling Time:** <6 µs
+- **Current:** ±50 mA
+- **Accuracy:** ±0.5% of full scale
+
+#### Firmware Usage (from config.h)
+```cpp
+#define MCP4725_ADDR_1  0x60   // CV Output 1 (Pitch)
+#define MCP4725_ADDR_2  0x61   // CV Output 2 (Gate)
+#define DAC_MAX_VALUE    4095  // 12-bit resolution
+#define DAC_MAX_VOLTAGE  5.0f  // Full-scale output
+```
+
+#### Code Example: Setting DAC Voltages
+```cpp
+// In your firmware code:
+#include <Adafruit_MCP4725.h>
+#include <Wire.h>
+
+Adafruit_MCP4725 dac1;  // Address 0x60
+Adafruit_MCP4725 dac2;  // Address 0x61
+
+void setup() {
+    Wire.begin();  // I2C on pins 18 (SDA), 19 (SCL)
+    
+    // Initialize both DACs with different addresses
+    if (!dac1.begin(MCP4725_I2CADDR_DEFAULT)) {  // 0x60
+        Serial.println("DAC1 (0x60) not found!");
+    }
+    if (!dac2.begin(MCP4725_I2CADDR_DEFAULT + 1)) {  // 0x61
+        Serial.println("DAC2 (0x61) not found!");
+    }
+}
+
+void loop() {
+    // Set CV1 to 2.5V (half of 5V)
+    uint16_t value = 2048;  // 4095 * 0.5
+    dac1.setVoltage(value, false);
+    
+    // Set CV2 to 5V (full voltage)
+    dac2.setVoltage(4095, false);
+}
+```
+
+#### Serial Monitor Output on Boot
+```
+Wire: I2C on pins 18 (SDA), 19 (SCL)
+MCP4725 DAC1 initialized at address 0x60
+MCP4725 DAC2 initialized at address 0x61
+Polyphonion Ready!
+```
+
+---
+
+### Old: BOOST-DAC8568 Board (Deprecated - SPI 8-Channel DAC)
+**Status:** DISCONTINUED - Replaced with MCP4725 I2C solution
+- Previous implementation used 8-channel 16-bit SPI DAC
+- Issue: Hardware defect in BOOST-DAC8568 module (0V output)
+- Current: Using 2x MCP4725 I2C DACs instead for reliability
+
+---
+
+## I2C Bus Configuration
+
+The I2C bus (SDA=18, SCL=19) uses **Teensy 4.1's I2C0 interface** and is dedicated to DAC control:
+- **MCP4725 DAC 1:** I2C Address 0x60 (A0=GND)
+- **MCP4725 DAC 2:** I2C Address 0x61 (A0=VCC)
+
+**No other I2C devices on this bus** - clean, dedicated connection.
+
+**Note:** Teensy 4.1 also has I2C1 (pins 22/23) and I2C2 (pins 24/25) if future expansion needed.
 
 ## Power Requirements
 
@@ -141,9 +236,9 @@ Each device has its own chip select pin for bus arbitration. Only one device is 
 - **Touch Controller:** 3.3V from Teensy (minimal current)
 - **Encoder:** 3.3V from Teensy (minimal current)
 - **Buttons:** No power (uses pull-ups)
-- **DAC8568:** 5V (critical for full 0-5V output range)
+- **MCP4725 DACs:** 5V (critical for full 0-5V output range)
 
-**Important:** DAC8568 VDD and VREFIN must both be 5V for proper 0-5V output range. Using 3.3V will limit output to 0-3.3V, insufficient for Eurorack standards.
+**Important:** MCP4725 VCC must be 5V for proper 0-5V output. Using 3.3V will limit output to 0-3.3V, insufficient for Eurorack standards (1V/octave requires headroom).
 
 ## Eurorack CV/Gate Standards
 
@@ -177,36 +272,63 @@ Each device has its own chip select pin for bus arbitration. Only one device is 
 - `ENC_STEPS_PER_NOTCH = 1` for DEBO encoder
 - Standard encoders may need `= 4`
 
-### DAC8568 not detected
-- Verify SPI connections (DIN=11, SCLK=13, SYNC=14)
-- Confirm 5V power to both VDD and VREFIN
-- Check DAC_CS (Pin 14) is properly connected
-- Monitor serial output for "DAC8568 initialized successfully" message
-- Verify LDAC is tied to GND and CLR is tied to VDD
+### MCP4725 DACs not detected
+- **Verify I2C wiring:**
+  - SDA (Pin 18) to both DAC SDA pins
+  - SCL (Pin 19) to both DAC SCL pins
+  - GND connections solid
+- **Check A0 pin addressing:**
+  - DAC1: A0 pin connected to GND → Address 0x60 ✓
+  - DAC2: A0 pin connected to VCC (5V) → Address 0x61 ✓
+- **Power check:**
+  - Verify 5V to DAC VCC pins (not 3.3V)
+  - GND properly connected
+- **Serial output:** Should show "MCP4725 initialized at 0x60" and "MCP4725 initialized at 0x61"
+- **Test with multimeter:**
+  - Measure continuity on SDA/SCL lines
+  - Check voltage at DAC OUT pins (should be 0-5V range)
 
 ### CV output voltage too low
-- DAC8568 VDD must be 5V (not 3.3V)
-- VREFIN must also be 5V for full 0-5V range
-- Check voltages at VOUT pins with multimeter
-- Verify output jack wiring (ground connections)
+- Check MCP4725 VCC is 5V (not 3.3V)
+- Use multimeter to verify voltage at DAC OUT pins
+- Verify TRRS jack ground connections (Sleeve = GND, Ring 1/2 = signals)
+- Check firmware is addressing correct DAC address (0x60 or 0x61)
 
-### No CV output on some channels
-- Check all VOUT pins are properly connected
-- Use serial monitor to verify which script is loaded
-- Test each channel individually with multimeter
-- DAC8568 outputs persist even when script is stopped
+### No CV output on one DAC but not the other
+- DAC that works: Addressing correct
+- DAC that doesn't: Check A0 pin connection
+  - If DAC2 silent: Verify A0 is connected to 5V (not floating)
+  - If DAC1 silent: Verify A0 is connected to GND (not floating)
+- Use I2C scanner to verify both addresses appear on bus
+
+### CV output not changing when moving encoder
+- Verify MCP4725 is receiving I2C commands (use serial debug output)
+- Check which script is running and which DAC it's using
+- Firmware mapping: LFO uses DAC1 (0x60), Sequencer gate uses DAC2 (0x61)
+
+### I2C Bus Conflicts
+- MCP4725 I2C bus (pins 18/19) is dedicated - no other I2C devices
+- Teensy 4.1 has I2C1 (pins 22/23) and I2C2 (pins 24/25) available for future expansion
+- Pull-up resistors on I2C bus already present on MCP4725 breakout boards (usually 10kΩ)
 
 ## Serial Monitor Output
 
 At startup, you should see:
 ```
 Polyphonion Initializing...
+Wire: I2C on pins 18 (SDA), 19 (SCL)
+MCP4725 DAC1 initialized at address 0x60
+MCP4725 DAC2 initialized at address 0x61
 LFO: Initialized successfully with MCP4725 DAC
-     CV output available on VOUT pin (connect to TRRS jack)
-SEQ: CV DAC initialized
-SEQ: Gate DAC initialized
+     CV output available on TRRS jack (CV Out 1)
+SEQ: CV DAC initialized (address 0x60)
+     Gate DAC initialized (address 0x61)
 ScriptManager: Initialized
 Polyphonion Ready!
 ```
 
-If DACs are not detected, check wiring and addresses.
+**If DACs are not detected:**
+- Check I2C wiring (pins 18/19)
+- Verify A0 addressing pins
+- Monitor serial output for specific error messages
+- Try I2C address scanner to verify both 0x60 and 0x61 respond

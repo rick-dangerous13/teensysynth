@@ -6,7 +6,8 @@
 #include <math.h>
 
 LFOScript::LFOScript() 
-    : dac(nullptr)
+    : dac1(nullptr)
+    , dac2(nullptr)
     , frequency(1.0f)
     , level(5.0f)
     , waveform(0)  // Sine
@@ -17,8 +18,8 @@ LFOScript::LFOScript()
 }
 
 bool LFOScript::begin() {
-    // DAC is initialized externally and shared
-    // LFO uses channel 0 (DAC_CH_STEP1) for output
+    // DACs are initialized externally and shared
+    // LFO uses DAC1 for CV output
     dacInitialized = false;  // Will be set by setDAC()
     
     lastUpdateMicros = micros();
@@ -27,13 +28,14 @@ bool LFOScript::begin() {
     return true;
 }
 
-void LFOScript::setDAC(DAC8568* dacPtr) {
-    dac = dacPtr;
-    if (dac != nullptr) {
+void LFOScript::setDAC(Adafruit_MCP4725* dac1Ptr, Adafruit_MCP4725* dac2Ptr) {
+    dac1 = dac1Ptr;
+    dac2 = dac2Ptr;
+    if (dac1 != nullptr) {
         dacInitialized = true;
-        // Set initial output to 0V on channel 0
-        dac->setVoltage(DAC_CH_STEP1, 0.0f);
-        Serial.println("LFO: Using DAC8568 channel 0 for CV output");
+        // Set initial output to 0V
+        dac1->setVoltage(0, false);
+        Serial.println("LFO: Using MCP4725 DAC1 for CV output");
     } else {
         dacInitialized = false;
         Serial.println("LFO: WARNING - No DAC available, running without CV output");
@@ -62,16 +64,17 @@ void LFOScript::update() {
     // Convert to voltage and output to DAC
     float outputVoltage = currentValue * level;
     
-    // Update DAC channel 0
-    if (dacInitialized && dac != nullptr) {
-        dac->setVoltage(DAC_CH_STEP1, outputVoltage);
+    // Update MCP4725 DAC1
+    if (dacInitialized && dac1 != nullptr) {
+        uint16_t dacValue = voltageToDACValue(outputVoltage);
+        dac1->setVoltage(dacValue, false);
     }
 }
 
 void LFOScript::stop() {
-    if (dacInitialized && dac != nullptr) {
-        // Set output to 0V on channel 0
-        dac->setVoltage(DAC_CH_STEP1, 0.0f);
+    if (dacInitialized && dac1 != nullptr) {
+        // Set output to 0V
+        dac1->setVoltage(0, false);
     }
 }
 
@@ -122,12 +125,11 @@ float LFOScript::calculateWaveform() {
 }
 
 uint16_t LFOScript::voltageToDACValue(float volts) {
-    // DAC8568 is 16-bit (0-65535)
-    // Uses DAC8568 class method internally, this is kept for compatibility
-    if (dac != nullptr) {
-        return dac->voltageToDACValue(volts);
-    }
-    return 0;
+    // MCP4725 is 12-bit (0-4095)
+    // Map 0-5V to 0-4095
+    if (volts < 0.0f) volts = 0.0f;
+    if (volts > 5.0f) volts = 5.0f;
+    return (uint16_t)((volts / 5.0f) * DAC_MAX_VALUE);
 }
 
 void LFOScript::getDisplayText(char* buffer, size_t bufferSize) {

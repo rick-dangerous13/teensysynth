@@ -23,8 +23,7 @@ const ScriptLibraryEntry ScriptManager::scriptLibrary[] = {
 const uint8_t ScriptManager::scriptLibraryCount = sizeof(ScriptManager::scriptLibrary) / sizeof(ScriptLibraryEntry);
 
 ScriptManager::ScriptManager() 
-    : dac(nullptr)
-    , dacInitialized(false)
+    : dacInitialized(false)
     , lastUpdateTime(0) {
     // Initialize all script slots
     for (int i = 0; i < MAX_SCRIPTS; i++) {
@@ -43,16 +42,24 @@ void ScriptManager::begin() {
     
     Serial.println("ScriptManager: Initializing...");
     
-    // Initialize DAC8568 (8-channel, 16-bit DAC)
-    // Note: This will succeed even if hardware is not connected
-    // SPI commands will just go to an inactive bus
-    dac = new DAC8568(DAC_CS, DAC_MAX_VOLTAGE, DAC_RST);
-    dac->begin();  // Always returns true, no hardware detection
-    dacInitialized = true;
+    // Initialize I2C
+    Wire.begin();
     
-    Serial.println("ScriptManager: DAC8568 interface configured");
-    Serial.println("  Note: CV output requires DAC8568 hardware (check config.h for CS pin)");
-    Serial.println("  Firmware will run normally without DAC connected");
+    // Initialize MCP4725 DACs
+    Serial.println("ScriptManager: Initializing MCP4725 DACs...");
+    bool dac1Ready = dac1.begin(MCP4725_ADDR_1);
+    bool dac2Ready = dac2.begin(MCP4725_ADDR_2);
+    
+    if (dac1Ready && dac2Ready) {
+        dacInitialized = true;
+        Serial.println("  DAC1 (0x60): OK");
+        Serial.println("  DAC2 (0x61): OK");
+    } else {
+        Serial.println("  Warning: One or more DACs not detected");
+        if (!dac1Ready) Serial.println("  DAC1 (0x60): NOT FOUND");
+        if (!dac2Ready) Serial.println("  DAC2 (0x61): NOT FOUND");
+        dacInitialized = false;
+    }
     
     Serial.println("ScriptManager: Initialized");
 }
@@ -285,9 +292,9 @@ bool ScriptManager::loadScriptFromLibrary(uint8_t slot, uint8_t libraryIndex) {
             return false;
         }
         
-        // Set shared DAC (uses channel 0)
+        // Set shared DACs (LFO uses DAC1)
         if (dacInitialized) {
-            lfoInstances[slot]->setDAC(dac);
+            lfoInstances[slot]->setDAC(&dac1, &dac2);
         }
         
         strcpy(scripts[slot].name, entry->name);
@@ -318,9 +325,9 @@ bool ScriptManager::loadScriptFromLibrary(uint8_t slot, uint8_t libraryIndex) {
         }
         Serial.println("Poliquencer begin() successful");
         
-        // Set shared DAC (uses all 8 channels for polyphonic output)
+        // Set shared DACs (Poliquencer uses DAC1 for CV, DAC2 for gate)
         if (dacInitialized) {
-            poliquencerInstances[slot]->setDAC(dac);
+            poliquencerInstances[slot]->setDAC(&dac1, &dac2);
         }
         
         // Set default tempo

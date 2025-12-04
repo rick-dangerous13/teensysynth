@@ -186,7 +186,6 @@ void handleScriptSelectState() {
     if (isTouchTest) {
         static bool lastOK = false;
         static bool lastBack = false;
-        static int lastEncoderPos = 0;
         static bool lastTouch = false;
         
         // Check OK button
@@ -203,16 +202,6 @@ void handleScriptSelectState() {
             lastBack = true;
         } else if (!input.isButtonPressed(BTN_BACK)) {
             lastBack = false;
-        }
-        
-        // Check encoder
-        int delta = input.getEncoderDelta();
-        if (delta != 0) {
-            lastEncoderPos += delta;
-            Serial.print(">>> ENCODER: delta=");
-            Serial.print(delta);
-            Serial.print(" position=");
-            Serial.println(lastEncoderPos);
         }
         
         // Check touch - show BOTH raw and mapped coordinates for calibration
