@@ -162,7 +162,7 @@ void handleMainMenuState() {
                 changeState(AppState::SCRIPT_LIBRARY);
                 ui.resetMenuTracking();  // Reset for new screen
                 ui.setMenuItemCount(scriptManager.getScriptLibraryCount());
-                ui.showScriptLibraryScreen();
+                ui.showScriptLibraryScreen(&scriptManager);
                 break;
             case 1: // Settings
                 changeState(AppState::SETTINGS);
@@ -351,6 +351,63 @@ void handleScriptSelectState() {
                     scriptManager.setPoliquencerStepDuration(0, editStep, dummyDurations[editStep] + scrollDelta);
                 }
             }
+            // Try ChordSequencer
+            else {
+                uint8_t chordRoots[4];
+                uint8_t chordTypes[4];
+                uint8_t chordBeats[4];
+                uint8_t currentChordSlot;
+                uint8_t beatCounter;
+                if (scriptManager.getChordSequencerData(0, chordRoots, chordTypes, chordBeats, &currentChordSlot, &beatCounter)) {
+                    // Handle carousel rotation when active
+                    if (ui.isCarouselActive(0)) {
+                        ui.rotateCarouselWithAnimation(0, scrollDelta);
+                    } else {
+                        // Encoder controls chord selection when carousel is closed
+                        uint8_t selectedChord = ui.getSelectedChordSlot(0);
+                        if (scrollDelta > 0) {
+                            selectedChord = (selectedChord + 1) % 4;
+                        } else if (scrollDelta < 0) {
+                            selectedChord = (selectedChord == 0) ? 3 : (selectedChord - 1);
+                        }
+                        ui.setSelectedChordSlot(0, selectedChord);
+                    }
+                }
+            }
+        }
+    }
+    
+    // Handle button input for ChordSequencer
+    if (input.isButtonPressed(BTN_OK) && scriptManager.isScriptRunning(0)) {
+        uint8_t dummy;
+        int8_t dummySteps[8];
+        uint8_t dummyDurations[8];
+        uint8_t dummyGateModes[8];
+        uint8_t dummyDirection;
+        bool dummySteam;
+        
+        // Check if ChordSequencer is running
+        uint8_t chordRoots[4];
+        uint8_t chordTypes[4];
+        uint8_t chordBeats[4];
+        uint8_t currentChordSlot;
+        uint8_t beatCounter;
+        if (scriptManager.getChordSequencerData(0, chordRoots, chordTypes, chordBeats, &currentChordSlot, &beatCounter)) {
+            if (ui.isCarouselActive(0)) {
+                // Carousel is open - apply selected chord and close
+                uint8_t selectedChordSlot = ui.getSelectedChordSlot(0);
+                uint8_t newRoot, newType;
+                ui.getCarouselChordInfo(0, &newRoot, &newType);
+                
+                // Update script manager with new chord
+                scriptManager.setChordSequencerChord(0, selectedChordSlot, newRoot, newType);
+                
+                // Update UI and close
+                ui.selectFromCarousel(0);
+            } else {
+                // Carousel is closed - open it to select a replacement chord
+                ui.toggleCarousel(0);
+            }
         }
     }
     
@@ -457,6 +514,9 @@ void handleScriptSelectState() {
             uint8_t dummyGateModes[8];
             uint8_t dummyDirection;
             bool dummySteam;
+            uint8_t chordRoots[4];
+            uint8_t chordTypes[4];
+            uint8_t chordBeats[4];
             
             // LFO: cycle edit parameter
             uint8_t waveType;
@@ -477,6 +537,10 @@ void handleScriptSelectState() {
                 ui.advanceSequencerEditStep(0);
                 ui.showScriptSelectScreen();
                 return;
+            }
+            // ChordSequencer: button is already handled above, don't process further
+            else if (scriptManager.getChordSequencerData(0, chordRoots, chordTypes, chordBeats, &dummy, &dummy)) {
+                return;  // ChordSequencer button handled already, prevent fallthrough
             }
         }
         

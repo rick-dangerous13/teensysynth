@@ -92,6 +92,7 @@ public:
     
     // ChordSequencer access
     bool getChordSequencerData(uint8_t slot, uint8_t chordRoots[4], uint8_t chordTypes[4], uint8_t chordBeats[4], uint8_t* currentChordSlot, uint8_t* beatCounter);
+    void setChordSequencerChord(uint8_t slot, uint8_t chordSlot, uint8_t rootNote, uint8_t chordType);
     void setPoliquencerStepDuration(uint8_t slot, uint8_t step, uint8_t duration);
     void setPoliquencerStepGateMode(uint8_t slot, uint8_t step, uint8_t gateMode);
     void setPoliquencerDirection(uint8_t slot, uint8_t direction);

@@ -15,7 +15,7 @@
 // Script library definition
 const ScriptLibraryEntry ScriptManager::scriptLibrary[] = {
     {"Poliquencer", "Metropolix-style Artistic Sequencer", 2},
-    {"Symphony Chrod Sequencer", "4-Chord Harmonic Sequencer (Oxi-style)", 5},
+    {"Symphony Chord Sequencer", "4-Chord Harmonic Sequencer (Oxi-style)", 5},
     {"LFO", "Low Frequency Oscillator", 0},
     {"Envelope", "ADSR Envelope (Coming Soon)", 3},
     {"Clock", "Clock Divider (Coming Soon)", 4}
@@ -581,3 +581,13 @@ bool ScriptManager::getChordSequencerData(uint8_t slot, uint8_t chordRoots[4], u
     
     return true;
 }
+
+void ScriptManager::setChordSequencerChord(uint8_t slot, uint8_t chordSlot, uint8_t rootNote, uint8_t chordType) {
+    if (slot >= MAX_SCRIPTS || chordSlot >= 4 || chordSequencerInstances[slot] == nullptr) {
+        return;
+    }
+    
+    ChordType type = (chordType == 0) ? CHORD_MAJOR : CHORD_MINOR;
+    chordSequencerInstances[slot]->setChord(chordSlot, rootNote, type);
+}
+

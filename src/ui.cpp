@@ -69,6 +69,12 @@ UI::UI() : display(nullptr), clockTempo(DEFAULT_CLOCK_BPM), multitaskingMode(fal
         scriptSlots[i].chordBeatCounter = 0;
         scriptSlots[i].lastCurrentChordSlot = 255;  // 255 = uninitialized
         scriptSlots[i].lastChordBeatCounter = 255;
+        scriptSlots[i].carouselActive = false;
+        scriptSlots[i].carouselSelectedIdx = 0;
+        scriptSlots[i].lastCarouselActive = false;
+        scriptSlots[i].lastCarouselSelectedIdx = 255;
+        scriptSlots[i].carouselScrollOffset = 0;
+        scriptSlots[i].lastCarouselScrollOffset = 0;
         for (int j = 0; j < 4; j++) {
             scriptSlots[i].chordRoots[j] = 0;  // Default to C
             scriptSlots[i].chordTypes[j] = 0;  // Default to major
@@ -78,6 +84,21 @@ UI::UI() : display(nullptr), clockTempo(DEFAULT_CLOCK_BPM), multitaskingMode(fal
             scriptSlots[i].lastChordBeats[j] = 255;
         }
     }
+    
+    // Initialize chord library (12 common chords: all 12 notes in major and minor)
+    // We'll use: C, D, E, F, G, A, B major and minor versions
+    chordLibrary[0] = {0, 0};   // C maj
+    chordLibrary[1] = {0, 1};   // C min
+    chordLibrary[2] = {2, 0};   // D maj
+    chordLibrary[3] = {2, 1};   // D min
+    chordLibrary[4] = {4, 0};   // E maj
+    chordLibrary[5] = {4, 1};   // E min
+    chordLibrary[6] = {5, 0};   // F maj
+    chordLibrary[7] = {5, 1};   // F min
+    chordLibrary[8] = {7, 0};   // G maj
+    chordLibrary[9] = {7, 1};   // G min
+    chordLibrary[10] = {9, 0};  // A maj
+    chordLibrary[11] = {9, 1};  // A min
     
     // Initialize menu items
     for (int i = 0; i < MAX_MENU_ITEMS; i++) {
@@ -789,21 +810,18 @@ void UI::drawChordSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16
         return 3; // fallback
     };
 
-    // Helper: redraw all dots across all chords with current highlight
+    // Helper: redraw all dots across all chords with current beat highlight
     auto redrawDots = [&]() {
         uint16_t absoluteCurrent = getAbsoluteBeat();
         uint16_t totalSpan = (totalBeats > 1) ? (totalBeats - 1) : 1;
 
-        // First pass: reset dot area using underlying chord fill color per dot
+        // First pass: reset all dots to light blue background
         for (uint16_t b = 0; b < totalBeats; b++) {
-            uint8_t chordIdx = chordForBeat(b);
-            bool isCurrentChord = (chordIdx == scriptSlots[slot].currentChordSlot);
-            uint16_t fillColor = isCurrentChord ? COLOR_ACCENT : 0x5D9F;
             int16_t dotX = dotStartX + (int32_t)((chartW * b) / totalSpan);
-            display->fillCircle(dotX, dotY, 3, fillColor);
+            display->fillCircle(dotX, dotY, 3, 0x5D9F);
         }
 
-        // Second pass: draw dots with highlight for current beat
+        // Second pass: draw dots with highlight for current beat only
         for (uint16_t b = 0; b < totalBeats; b++) {
             int16_t dotX = dotStartX + (int32_t)((chartW * b) / totalSpan);
             bool isCurrentBeat = (b == absoluteCurrent);
@@ -823,8 +841,8 @@ void UI::drawChordSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16
             int16_t segmentW = (chartW * scriptSlots[slot].chordBeats[i]) / totalBeats;
             if (i == 3) segmentW = chartStartX + chartW - currentX;  // Last segment fills remaining
             
-            bool isCurrent = (i == scriptSlots[slot].currentChordSlot);
-            uint16_t fillColor = isCurrent ? COLOR_ACCENT : 0x5D9F;  // Cyan or light blue
+            bool isSelected = (i == scriptSlots[slot].selectedChordSlot);
+            uint16_t fillColor = isSelected ? COLOR_ACCENT : 0x5D9F;  // Cyan if selected, light blue otherwise
             
             // Draw filled rounded rectangle (no border)
             display->fillRoundRect(currentX, chartY, segmentW, chartH, 8, fillColor);
@@ -855,6 +873,7 @@ void UI::drawChordSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16
         // Mark as initialized
         scriptSlots[slot].lastCurrentChordSlot = scriptSlots[slot].currentChordSlot;
         scriptSlots[slot].lastChordBeatCounter = scriptSlots[slot].chordBeatCounter;
+        scriptSlots[slot].lastSelectedChordSlot = scriptSlots[slot].selectedChordSlot;
         for (int i = 0; i < 4; i++) {
             scriptSlots[slot].lastChordRoots[i] = scriptSlots[slot].chordRoots[i];
             scriptSlots[slot].lastChordTypes[i] = scriptSlots[slot].chordTypes[i];
@@ -879,8 +898,8 @@ void UI::drawChordSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16
                 int16_t segmentW = (chartW * scriptSlots[slot].chordBeats[i]) / totalBeats;
                 if (i == 3) segmentW = chartStartX + chartW - currentX;
                 
-                bool isCurrent = (i == scriptSlots[slot].currentChordSlot);
-                uint16_t fillColor = isCurrent ? COLOR_ACCENT : 0x5D9F;
+                bool isSelected = (i == scriptSlots[slot].selectedChordSlot);
+                uint16_t fillColor = isSelected ? COLOR_ACCENT : 0x5D9F;
                 
                 display->fillRoundRect(currentX, chartY, segmentW, chartH, 8, fillColor);
                 
@@ -911,17 +930,17 @@ void UI::drawChordSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16
             redrawDots();
         }
         
-        // Check if current chord changed (highlight change)
-        if (scriptSlots[slot].currentChordSlot != scriptSlots[slot].lastCurrentChordSlot) {
+        // Check if selected chord changed (highlight change)
+        if (scriptSlots[slot].selectedChordSlot != scriptSlots[slot].lastSelectedChordSlot) {
             // Redraw both old and new segments with updated colors
             int16_t currentX = chartStartX;
             for (int i = 0; i < 4; i++) {
                 int16_t segmentW = (chartW * scriptSlots[slot].chordBeats[i]) / totalBeats;
                 if (i == 3) segmentW = chartStartX + chartW - currentX;
                 
-                if (i == scriptSlots[slot].lastCurrentChordSlot || i == scriptSlots[slot].currentChordSlot) {
-                    bool isCurrent = (i == scriptSlots[slot].currentChordSlot);
-                    uint16_t fillColor = isCurrent ? COLOR_ACCENT : 0x5D9F;
+                if (i == scriptSlots[slot].lastSelectedChordSlot || i == scriptSlots[slot].selectedChordSlot) {
+                    bool isSelected = (i == scriptSlots[slot].selectedChordSlot);
+                    uint16_t fillColor = isSelected ? COLOR_ACCENT : 0x5D9F;
                     
                     display->fillRoundRect(currentX, chartY, segmentW, chartH, 8, fillColor);
                     
@@ -945,7 +964,7 @@ void UI::drawChordSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16
                 currentX += segmentW;
             }
             
-            scriptSlots[slot].lastCurrentChordSlot = scriptSlots[slot].currentChordSlot;
+            scriptSlots[slot].lastSelectedChordSlot = scriptSlots[slot].selectedChordSlot;
 
             // Redraw dots to ensure highlight sits above updated segments
             redrawDots();
@@ -957,6 +976,12 @@ void UI::drawChordSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16
             scriptSlots[slot].lastChordBeatCounter = scriptSlots[slot].chordBeatCounter;
         }
     }
+    
+    // Draw carousel overlay if active (on top of chord sequencer)
+    drawChordSequencerCarouselOverlay(slot, x, y, w, h);
+
+    // Always draw beat dots last so they appear above carousel overlay
+    redrawDots();
 }
 
 void UI::drawButtonStrip(const char* btn1, const char* btn2, const char* btn3, const char* btn4) {
@@ -1436,6 +1461,12 @@ void UI::updateChordSequencer(uint8_t slot, uint8_t chordRoots[4], uint8_t chord
     }
     scriptSlots[slot].currentChordSlot = currentChordSlot;
     scriptSlots[slot].chordBeatCounter = beatCounter;
+    
+    // Initialize selectedChordSlot if not already done
+    if (scriptSlots[slot].selectedChordSlot > 3) {
+        scriptSlots[slot].selectedChordSlot = 0;
+        scriptSlots[slot].lastSelectedChordSlot = 255;  // Force first draw
+    }
 }
 
 void UI::drawPoliquencerSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h) {
@@ -1724,3 +1755,306 @@ void UI::drawPoliquencerSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w,
         scriptSlots[slot].lastSeqGateModes[i] = scriptSlots[slot].seqGateModes[i];
     }
 }
+
+// Carousel management methods
+void UI::toggleCarousel(uint8_t slot) {
+    if (slot < MAX_SCRIPTS) {
+        scriptSlots[slot].carouselActive = !scriptSlots[slot].carouselActive;
+        if (scriptSlots[slot].carouselActive) {
+            // Initialize carousel position to current chord
+            scriptSlots[slot].carouselSelectedIdx = scriptSlots[slot].selectedChordSlot;
+        }
+    }
+}
+
+void UI::rotateCarousel(uint8_t slot, int8_t delta) {
+    if (slot < MAX_SCRIPTS && scriptSlots[slot].carouselActive) {
+        int16_t newIdx = (int16_t)scriptSlots[slot].carouselSelectedIdx + delta;
+        if (newIdx < 0) newIdx = 11;
+        if (newIdx > 11) newIdx = 0;
+        scriptSlots[slot].carouselSelectedIdx = (uint8_t)newIdx;
+    }
+}
+
+void UI::selectFromCarousel(uint8_t slot) {
+    if (slot < MAX_SCRIPTS && scriptSlots[slot].carouselActive) {
+        // Apply the selected chord from carousel
+        uint8_t selectedChord = scriptSlots[slot].selectedChordSlot;
+        uint8_t newRoot = chordLibrary[scriptSlots[slot].carouselSelectedIdx].root;
+        uint8_t newType = chordLibrary[scriptSlots[slot].carouselSelectedIdx].type;
+
+        // Update UI state
+        scriptSlots[slot].chordRoots[selectedChord] = newRoot;
+        scriptSlots[slot].chordTypes[selectedChord] = newType;
+
+        // Also update the chord in the last tracking arrays so the UI detects the change
+        scriptSlots[slot].lastChordRoots[selectedChord] = 255;  // Force redraw
+        scriptSlots[slot].lastChordTypes[selectedChord] = 255;  // Force redraw
+
+        // Close carousel
+        scriptSlots[slot].carouselActive = false;
+        scriptSlots[slot].lastCarouselActive = true; // Force overlay clear on next draw
+        // Force full redraw of chord sequencer
+        scriptSlots[slot].lastCurrentChordSlot = 255;
+        scriptSlots[slot].lastSelectedChordSlot = 255;
+    }
+}
+
+void UI::getCarouselChords(uint8_t indices[10], uint8_t roots[10], uint8_t types[10]) const {
+    // Return 10 chords (all except the current selection)
+    int idx = 0;
+    for (int i = 0; i < 12; i++) {
+        indices[idx] = i;
+        roots[idx] = chordLibrary[i].root;
+        types[idx] = chordLibrary[i].type;
+        idx++;
+    }
+}
+
+void UI::drawChordSequencerCarouselOverlay(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h) {
+    if (!display || slot >= MAX_SCRIPTS) return;
+    
+    bool carouselActive = scriptSlots[slot].carouselActive;
+    uint8_t selectedIdx = scriptSlots[slot].carouselSelectedIdx;
+    
+    // If not active and wasn't active, skip drawing
+    if (!carouselActive && !scriptSlots[slot].lastCarouselActive) {
+        return;
+    }
+    
+    // If carousel is being closed, clear the entire carousel area
+    if (!carouselActive && scriptSlots[slot].lastCarouselActive) {
+        // Clear a wide area to remove all carousel traces
+        int16_t clearX = x + 10;
+        int16_t clearW = w - 20;
+        display->fillRect(clearX, y - 150, clearW, 300, COLOR_BG);
+        
+        scriptSlots[slot].lastCarouselActive = carouselActive;
+        scriptSlots[slot].carouselScrollOffset = 0;
+        return;
+    }
+    
+    // Only draw if carousel is active
+    if (!carouselActive) return;
+    
+    const char* noteNames[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+    const char* typeNames[] = {"maj", "min"};
+    char chordBuffer[16];
+    
+    // Get selected chord slot
+    uint8_t selectedChordSlot = scriptSlots[slot].selectedChordSlot;
+    
+    // Calculate total beats
+    uint16_t totalBeats = 0;
+    for (int i = 0; i < 4; i++) {
+        totalBeats += scriptSlots[slot].chordBeats[i];
+    }
+    if (totalBeats == 0) totalBeats = 1;
+    
+    // Chart dimensions and positions
+    int16_t chartH = 56;  // Height of position 0 box (same as progression boxes)
+    int16_t chartY = y + (h - chartH) / 2;
+    int16_t upperHorizon = chartY;  // Top border of selected chords
+    int16_t lowerHorizon = chartY + chartH;  // Bottom border of selected chords
+    int16_t chartStartX = x + 10;
+    int16_t chartW = w - 20;
+    
+    // Calculate selected chord box X position and width
+    int16_t selectedChordX = chartStartX;
+    for (int i = 0; i < selectedChordSlot; i++) {
+        int16_t segmentW = (chartW * scriptSlots[slot].chordBeats[i]) / totalBeats;
+        selectedChordX += segmentW;
+    }
+    int16_t selectedChordWidth = (chartW * scriptSlots[slot].chordBeats[selectedChordSlot]) / totalBeats;
+    
+    // Carousel box dimensions
+    int16_t outerBoxHeight = 25;  // Height of positions ±1, ±2, ±3
+    int16_t centerBoxHeight = chartH;  // Height of position 0
+    int16_t boxSpacing = 2;  // 2 pixels between boxes
+    
+    // Smooth animation: decelerate toward 0
+    int16_t scrollOffset = scriptSlots[slot].carouselScrollOffset;
+    if (scrollOffset != 0) {
+        int16_t reduction = scrollOffset / 3;
+        if (reduction == 0) reduction = (scrollOffset > 0) ? 1 : -1;
+        scriptSlots[slot].carouselScrollOffset -= reduction;
+        if (abs(scriptSlots[slot].carouselScrollOffset) < 2) {
+            scriptSlots[slot].carouselScrollOffset = 0;
+        }
+    }
+    scrollOffset = scriptSlots[slot].carouselScrollOffset;
+    
+    // Only redraw if something changed (animation happening or first draw)
+    bool needsRedraw = (scrollOffset != scriptSlots[slot].lastCarouselScrollOffset) || 
+                       (selectedIdx != scriptSlots[slot].lastCarouselSelectedIdx) ||
+                       (scriptSlots[slot].lastCarouselScrollOffset == 0 && scriptSlots[slot].lastCarouselSelectedIdx == 255);
+    
+    if (!needsRedraw) {
+        return;  // Nothing to update
+    }
+    
+    // Clear only the carousel column (entire vertical strip)
+    display->fillRect(selectedChordX, upperHorizon - 150, selectedChordWidth, 356, COLOR_BG);
+    
+    // Calculate the vertical positions of all 7 boxes
+    // Position 0 must have its top at upperHorizon and bottom at lowerHorizon
+    // The scroll offset shifts all boxes uniformly
+    int16_t pos0Y = upperHorizon + scrollOffset;
+    
+    // Helper to get Y position for any position
+    auto getBoxY = [&](int8_t position) -> int16_t {
+        if (position == 0) return pos0Y;
+        
+        int16_t y_pos = pos0Y;
+        if (position > 0) {
+            // Positions +1, +2, +3 go below position 0
+            y_pos += centerBoxHeight + boxSpacing;
+            for (int8_t p = 1; p < position; p++) {
+                y_pos += outerBoxHeight + boxSpacing;
+            }
+        } else {
+            // Positions -1, -2, -3 go above position 0
+            y_pos -= boxSpacing + outerBoxHeight;
+            for (int8_t p = -1; p > position; p--) {
+                y_pos -= (outerBoxHeight + boxSpacing);
+            }
+        }
+        return y_pos;
+    };
+    
+    // Helper to get box height for any position
+    auto getBoxHeight = [&](int8_t position) -> int16_t {
+        return (position == 0) ? centerBoxHeight : outerBoxHeight;
+    };
+    
+    // Draw all 7 carousel boxes
+    // Calculate the base index for position 0 (where scrollOffset = 0)
+    // This ensures the carousel shows chords in fixed sequential order
+    int16_t virtualPosition = -scrollOffset / 27;  // Which "notch" we're at
+    int16_t pixelOffset = -scrollOffset % 27;  // Fine pixel offset within that notch
+    
+    for (int8_t pos = -3; pos <= 3; pos++) {
+        // Calculate which chord to show at this position
+        // The chord library has a fixed order, and we scroll through it
+        int16_t displayPos = virtualPosition + pos;
+        uint8_t chordIdx = (selectedIdx + displayPos + 24) % 12;  // +24 to handle negative wrapping
+        uint8_t root = chordLibrary[chordIdx].root;
+        uint8_t type = chordLibrary[chordIdx].type;
+        
+        int16_t boxY = getBoxY(pos);
+        int16_t boxHeight = getBoxHeight(pos);
+        
+        // Draw rounded box
+        display->fillRoundRect(selectedChordX, boxY, selectedChordWidth, boxHeight, 6, 
+                              (pos == 0) ? 0x5D9F : 0x1082);
+        
+        // Draw text
+        if (pos == 0) {
+            // Center position: use same text format as progression boxes
+            char rootLabel[4];
+            char typeLabel[4];
+            snprintf(rootLabel, sizeof(rootLabel), "%s", noteNames[root]);
+            snprintf(typeLabel, sizeof(typeLabel), "%s", typeNames[type]);
+            
+            int16_t bxR, byR, bxT, byT; uint16_t bwR, bhR, bwT, bhT;
+            display->getTextBounds(rootLabel, 0, 0, &bxR, &byR, &bwR, &bhR, FONT_MEDIUM);
+            display->getTextBounds(typeLabel, 0, 0, &bxT, &byT, &bwT, &bhT, FONT_SMALL);
+            
+            int16_t totalW = bwR + 2 + bwT;
+            int16_t textX = selectedChordX + (selectedChordWidth - totalW) / 2 - bxR;
+            int16_t textY = boxY + (boxHeight - std::max((uint16_t)bhR, (uint16_t)bhT)) / 2 - std::min(byR, byT);
+            
+            display->drawText(textX, textY, rootLabel, COLOR_BG, FONT_MEDIUM);
+            display->drawText(textX + bwR + 2 - bxT, textY, typeLabel, COLOR_BG, FONT_SMALL);
+        } else {
+            // Outer positions: smaller text, centered
+            snprintf(chordBuffer, sizeof(chordBuffer), "%s %s", noteNames[root], typeNames[type]);
+            int16_t textY = boxY + boxHeight / 2;
+            display->drawTextCentered(textY, chordBuffer, COLOR_DIM, FONT_SMALL);
+        }
+    }
+    
+    // Update tracking variables
+    scriptSlots[slot].lastCarouselActive = carouselActive;
+    scriptSlots[slot].lastCarouselScrollOffset = scrollOffset;
+    scriptSlots[slot].lastCarouselSelectedIdx = selectedIdx;
+}
+
+
+void UI::rotateCarouselWithAnimation(uint8_t slot, int8_t delta) {
+    if (slot < MAX_SCRIPTS && scriptSlots[slot].carouselActive) {
+        // Update the carousel selection
+        int16_t newIdx = (int16_t)scriptSlots[slot].carouselSelectedIdx + delta;
+        if (newIdx < 0) newIdx = 11;
+        if (newIdx > 11) newIdx = 0;
+        scriptSlots[slot].carouselSelectedIdx = (uint8_t)newIdx;
+        
+        // Set animation offset: each box is 25px tall + 2px spacing = 27px per position
+        // Positive delta: scroll up (negative offset makes content appear to move up)
+        // Negative delta: scroll down (positive offset makes content appear to move down)
+        scriptSlots[slot].carouselScrollOffset -= delta * 27;  // 25px box + 2px spacing
+    }
+}
+
+void UI::drawChordCarousel(uint8_t slot) {
+    if (!display || slot >= MAX_SCRIPTS || !scriptSlots[slot].carouselActive) return;
+    
+    const char* noteNames[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+    const char* typeNames[] = {"maj", "min"};
+    char chordBuffer[16];  // Local buffer for chord display
+    
+    uint8_t selectedIdx = scriptSlots[slot].carouselSelectedIdx;
+    
+    // Carousel dimensions (mimicking iOS album selector)
+    int16_t carouselCenterX = 160;  // Center of screen
+    int16_t carouselCenterY = 120;  // Center of screen
+    int16_t itemHeight = 40;
+    
+    // Draw semi-transparent overlay
+    display->fillRect(0, 0, 320, 240, 0x0000);  // Black overlay
+    
+    // Draw carousel items: 2 above, center (selected), 2 below
+    // Calculate visible indices (wrapping)
+    uint8_t visibleIndices[5];
+    for (int i = -2; i <= 2; i++) {
+        int idx = (selectedIdx + i);
+        if (idx < 0) idx += 12;
+        if (idx >= 12) idx -= 12;
+        visibleIndices[i + 2] = idx;
+    }
+    
+    // Draw the 5 visible items
+    for (int pos = -2; pos <= 2; pos++) {
+        uint8_t chordIdx = visibleIndices[pos + 2];
+        uint8_t root = chordLibrary[chordIdx].root;
+        uint8_t type = chordLibrary[chordIdx].type;
+        
+        int16_t itemY = carouselCenterY + (pos * itemHeight);
+        bool isCenterItem = (pos == 0);
+        
+        // Scale and alpha based on position
+        uint16_t itemWidth = isCenterItem ? 140 : 100;
+        uint16_t itemX = carouselCenterX - itemWidth / 2;
+        uint16_t bgColor = isCenterItem ? 0x2104 : 0x1082;  // Darker boxes for non-center
+        
+        // Draw rounded box
+        display->fillRoundRect(itemX, itemY - itemHeight/2 + 5, itemWidth, itemHeight - 10, 8, bgColor);
+        
+        // Draw chord text (root + type)
+        snprintf(chordBuffer, sizeof(chordBuffer), "%s %s", noteNames[root], typeNames[type]);
+        
+        int16_t textY = itemY;
+        
+        if (isCenterItem) {
+            display->drawTextCentered(textY - 5, chordBuffer, COLOR_ACCENT, FONT_MEDIUM);
+            // Draw highlight border around center item
+            display->drawRoundRect(itemX, itemY - itemHeight/2 + 5, itemWidth, itemHeight - 10, 8, COLOR_ACCENT);
+        } else {
+            display->drawTextCentered(textY - 5, chordBuffer, COLOR_DIM, FONT_SMALL);
+        }
+    }
+    
+    // Draw hint text
+    display->drawTextCentered(210, "ENCODER: SELECT | BUTTON: APPLY", COLOR_DIM, FONT_SMALL);
+}
+

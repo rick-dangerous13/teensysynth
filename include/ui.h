@@ -65,12 +65,23 @@ struct ScriptSlot {
     uint8_t chordBeats[4];       // Beats per chord (1-32)
     uint8_t currentChordSlot;    // Current playing chord (0-3)
     uint8_t chordBeatCounter;    // Beat within current chord
+    uint8_t selectedChordSlot;   // Currently selected chord via encoder (0-3)
     // Previous state tracking for chord sequencer
     uint8_t lastChordRoots[4];
     uint8_t lastChordTypes[4];
     uint8_t lastChordBeats[4];
     uint8_t lastCurrentChordSlot;
     uint8_t lastChordBeatCounter;
+    uint8_t lastSelectedChordSlot;
+    // Carousel state
+    bool carouselActive;         // true when carousel is open
+    uint8_t carouselSelectedIdx; // Index in chord library (0-9)
+    // Previous carousel state for change detection
+    bool lastCarouselActive;
+    uint8_t lastCarouselSelectedIdx;
+    // Animation state for smooth scrolling
+    int16_t carouselScrollOffset;  // Scroll animation offset in pixels
+    int16_t lastCarouselScrollOffset;  // Last frame's scroll offset for smart redraw
 };
 
 class UI {
@@ -149,6 +160,24 @@ public:
     
     // ChordSequencer
     void updateChordSequencer(uint8_t slot, uint8_t chordRoots[4], uint8_t chordTypes[4], uint8_t chordBeats[4], uint8_t currentChordSlot, uint8_t beatCounter);
+    uint8_t getSelectedChordSlot(uint8_t slot) { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].selectedChordSlot : 0; }
+    void setSelectedChordSlot(uint8_t slot, uint8_t chordSlot) { if (slot < MAX_SCRIPTS && chordSlot < 4) scriptSlots[slot].selectedChordSlot = chordSlot; }
+    
+    // Carousel management
+    bool isCarouselActive(uint8_t slot) { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].carouselActive : false; }
+    void toggleCarousel(uint8_t slot);
+    void rotateCarousel(uint8_t slot, int8_t delta);
+    void rotateCarouselWithAnimation(uint8_t slot, int8_t delta);  // Carousel with smooth animation
+    void selectFromCarousel(uint8_t slot);
+    void getCarouselChords(uint8_t indices[10], uint8_t roots[10], uint8_t types[10]) const;  // Get 10 chords excluding currently selected
+    uint8_t getCarouselSelectedIdx(uint8_t slot) { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].carouselSelectedIdx : 0; }
+    void getCarouselChordInfo(uint8_t slot, uint8_t* root, uint8_t* type) {
+        if (slot < MAX_SCRIPTS) {
+            uint8_t idx = scriptSlots[slot].carouselSelectedIdx;
+            if (root) *root = chordLibrary[idx].root;
+            if (type) *type = chordLibrary[idx].type;
+        }
+    }
     
 private:
     Display* display;
@@ -178,6 +207,8 @@ private:
     void drawSequencerDials(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
     void drawPoliquencerSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
     void drawChordSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
+    void drawChordSequencerCarouselOverlay(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
+    void drawChordCarousel(uint8_t slot);
     void drawHeader(const char* title);
     void drawFooter(const char* leftLabel, const char* rightLabel);
     
@@ -187,6 +218,12 @@ private:
     
     // Button strip state tracking
     char lastButtonLabels[4][16];  // Track last drawn labels for change detection
+    
+    // Chord library for carousel (12 chords to choose from)
+    struct ChordInfo {
+        uint8_t root;   // 0-11
+        uint8_t type;   // 0=major, 1=minor
+    } chordLibrary[12];
 };
 
 #endif // UI_H
