@@ -1927,17 +1927,15 @@ void UI::drawChordSequencerCarouselOverlay(uint8_t slot, int16_t x, int16_t y, i
         return (position == 0) ? centerBoxHeight : outerBoxHeight;
     };
     
-    // Draw all 7 carousel boxes
-    // Calculate the base index for position 0 (where scrollOffset = 0)
-    // This ensures the carousel shows chords in fixed sequential order
-    int16_t virtualPosition = -scrollOffset / 27;  // Which "notch" we're at
-    int16_t pixelOffset = -scrollOffset % 27;  // Fine pixel offset within that notch
-    
+    // Draw all 7 carousel boxes in fixed sequential order
+    // Like a suitcase lock: if position 0 shows "5", then -1 shows "4", +1 shows "6", etc.
     for (int8_t pos = -3; pos <= 3; pos++) {
-        // Calculate which chord to show at this position
-        // The chord library has a fixed order, and we scroll through it
-        int16_t displayPos = virtualPosition + pos;
-        uint8_t chordIdx = (selectedIdx + displayPos + 24) % 12;  // +24 to handle negative wrapping
+        // Always show chords in sequential order from the library
+        // Position 0 shows selectedIdx, position -1 shows selectedIdx-1, position +1 shows selectedIdx+1
+        int16_t chordIdx = selectedIdx + pos;
+        if (chordIdx < 0) chordIdx += 12;  // Wrap negative
+        if (chordIdx >= 12) chordIdx -= 12;  // Wrap positive
+        
         uint8_t root = chordLibrary[chordIdx].root;
         uint8_t type = chordLibrary[chordIdx].type;
         
