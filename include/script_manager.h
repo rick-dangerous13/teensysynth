@@ -96,6 +96,8 @@ public:
     void setChordSequencerChordBeats(uint8_t slot, uint8_t chordSlot, uint8_t beats);
     bool getChordSequencerGlobals(uint8_t slot, GlobalParameters* globals);
     void setChordSequencerKey(uint8_t slot, MusicalKey key);
+    void setChordSequencerDegree(uint8_t slot, ScaleDegree degree);
+    ScaleDegree getChordSequencerDegree(uint8_t slot);
     void setChordSequencerTheoryMode(uint8_t slot, TheoryMode mode);
     void setChordSequencerVoiceLeading(uint8_t slot, float compactness);
     void setChordSequencerEnergy(uint8_t slot, float energy);

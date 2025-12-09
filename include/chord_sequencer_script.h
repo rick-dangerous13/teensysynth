@@ -36,9 +36,21 @@ enum TheoryMode {
     THEORY_ALL              // All chords available
 };
 
+// Scale degree/mode (defines scale quality)
+enum ScaleDegree {
+    DEGREE_MAJOR = 0,       // Ionian mode (major scale)
+    DEGREE_MINOR,           // Aeolian mode (natural minor)
+    DEGREE_DORIAN,          // Dorian mode
+    DEGREE_PHRYGIAN,        // Phrygian mode
+    DEGREE_LYDIAN,          // Lydian mode
+    DEGREE_MIXOLYDIAN,      // Mixolydian mode
+    DEGREE_LOCRIAN          // Locrian mode
+};
+
 // Global musical parameters
 struct GlobalParameters {
-    MusicalKey key;                    // Current key (C, C#, D, etc.)
+    MusicalKey key;                    // Current key root note (C, C#, D, etc.)
+    ScaleDegree degree;                // Scale quality (major, minor, dorian, etc.)
     TheoryMode theoryMode;             // Theory mode for suggestions
     float voiceLeadingCompactness;     // 0.0-1.0: prefer minimal voice movement
     float energy;                      // 0.0-1.0: harmonic energy/tension level
@@ -116,6 +128,8 @@ public:
     // Global parameter accessors
     const GlobalParameters& getGlobalParameters() const { return globals; }
     void setKey(MusicalKey key) { globals.key = key; }
+    void setDegree(ScaleDegree degree) { globals.degree = degree; }
+    ScaleDegree getDegree() const { return globals.degree; }
     void setTheoryMode(TheoryMode mode) { globals.theoryMode = mode; }
     void setVoiceLeadingCompactness(float value) { globals.voiceLeadingCompactness = constrain(value, 0.0f, 1.0f); }
     void setEnergy(float value) { globals.energy = constrain(value, 0.0f, 1.0f); }

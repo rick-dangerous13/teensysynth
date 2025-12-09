@@ -391,7 +391,7 @@ void handleScriptSelectState() {
                         
                         uint8_t chordBoxes = chordCountUi;
                         uint8_t plusBoxes = (chordCountUi < MAX_CHORD_SLOTS) ? 1 : 0;
-                        uint8_t globalBoxes = 4;
+                        uint8_t globalBoxes = 5;  // Key, Degree, Theory, Compactness, Energy
                         uint8_t totalNavigable = chordBoxes + plusBoxes + globalBoxes;
                         
                         // Current selection: chord slot (0..chordCount-1), plus box (chordCount), or global param (via selectedGlobalParam)
@@ -469,11 +469,16 @@ void handleScriptSelectState() {
         uint8_t chordCount;
         if (scriptManager.getChordSequencerData(0, chordRoots, chordTypes, chordBeats, &currentChordSlot, &beatCounter, &chordCount)) {
             if (ui.isBeatCountPickerActive(0)) {
+                uint8_t selectedParam = ui.getSelectedChordParam(0);
+                
                 if (ui.isEditingChordParam(0)) {
-                    // Currently editing - save and exit edit mode
+                    // Currently editing a parameter - save and exit edit mode
                     ui.exitChordParamEdit(0, true);
+                } else if (selectedParam == 4) {
+                    // "Done" button selected - close the picker
+                    ui.finalizeBeatCountPicker(0);
                 } else {
-                    // Not editing - enter edit mode for the selected parameter
+                    // Parameter box selected - enter edit mode
                     ui.enterChordParamEdit(0);
                 }
             } else if (ui.isChordListActive(0)) {
@@ -515,10 +520,12 @@ void handleScriptSelectState() {
                     if (selectedGlobal == 0) {
                         scriptManager.setChordSequencerKey(0, (MusicalKey)ui.getGlobalKey(0));
                     } else if (selectedGlobal == 1) {
-                        scriptManager.setChordSequencerTheoryMode(0, (TheoryMode)ui.getGlobalTheoryMode(0));
+                        scriptManager.setChordSequencerDegree(0, (ScaleDegree)ui.getGlobalDegree(0));
                     } else if (selectedGlobal == 2) {
-                        scriptManager.setChordSequencerVoiceLeading(0, ui.getGlobalVoiceLeading(0));
+                        scriptManager.setChordSequencerTheoryMode(0, (TheoryMode)ui.getGlobalTheoryMode(0));
                     } else if (selectedGlobal == 3) {
+                        scriptManager.setChordSequencerVoiceLeading(0, ui.getGlobalVoiceLeading(0));
+                    } else if (selectedGlobal == 4) {
                         scriptManager.setChordSequencerEnergy(0, ui.getGlobalEnergy(0));
                     }
                 }

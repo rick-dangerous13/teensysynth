@@ -92,12 +92,15 @@ UI::UI() : display(nullptr), scriptManager(nullptr), clockTempo(DEFAULT_CLOCK_BP
         scriptSlots[i].selectedGlobalParam = 255;  // None selected initially
         scriptSlots[i].editingGlobalParam = false;
         scriptSlots[i].globalKey = 0;  // C
+        scriptSlots[i].globalDegree = 0;  // Major
         scriptSlots[i].globalTheoryMode = 0;  // Functional
         scriptSlots[i].globalVoiceLeading = 0.5f;
         scriptSlots[i].globalEnergy = 0.5f;
+        scriptSlots[i].globalParamNeedsRedraw = true;  // Force initial draw
         scriptSlots[i].lastSelectedGlobalParam = 255;
         scriptSlots[i].lastEditingGlobalParam = false;
         scriptSlots[i].lastGlobalKey = 255;
+        scriptSlots[i].lastGlobalDegree = 255;
         scriptSlots[i].lastGlobalTheoryMode = 255;
         scriptSlots[i].lastGlobalVoiceLeading = -1.0f;
         scriptSlots[i].lastGlobalEnergy = -1.0f;
@@ -794,52 +797,55 @@ void UI::drawGlobalParameterBoxes(uint8_t slot, int16_t x, int16_t y, int16_t w,
     
     // Note names and theory mode names for display
     static const char* noteNames[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+    static const char* degreeNames[] = {"maj", "min", "dor", "phry", "lyd", "mix", "loc"};
     static const char* theoryModeNames[] = {"func", "diat", "modal", "chrom", "all"};
     
-    // Layout: 4 boxes in a row below the chord progression
+    // Layout: 5 boxes in a row below the chord progression
     // Position them below the dots area
     int16_t boxY = y + h - 35;  // Near bottom of slot
     int16_t boxH = 28;
-    int16_t boxW = 70;
-    int16_t boxGap = 5;
+    int16_t boxW = 58;  // Narrower to fit 5 boxes
+    int16_t boxGap = 4;
     int16_t boxStartX = x + 10;
     
     // Box data: label, value string
-    const char* labels[] = {"key", "theory", "compact", "energy"};
-    char values[4][16];
+    const char* labels[] = {"key", "degree", "theory", "compact", "energy"};
+    char values[5][16];
+    
+    // Check if this needs a full redraw (from slot state, not static)
+    bool isFirstDraw = scriptSlots[slot].globalParamNeedsRedraw;
     
     // Format values
     snprintf(values[0], sizeof(values[0]), "%s", noteNames[scriptSlots[slot].globalKey]);
-    snprintf(values[1], sizeof(values[1]), "%s", theoryModeNames[scriptSlots[slot].globalTheoryMode]);
-    snprintf(values[2], sizeof(values[2]), "%.2f", scriptSlots[slot].globalVoiceLeading);
-    snprintf(values[3], sizeof(values[3]), "%.2f", scriptSlots[slot].globalEnergy);
+    snprintf(values[1], sizeof(values[1]), "%s", degreeNames[scriptSlots[slot].globalDegree]);
+    snprintf(values[2], sizeof(values[2]), "%s", theoryModeNames[scriptSlots[slot].globalTheoryMode]);
+    snprintf(values[3], sizeof(values[3]), "%.2f", scriptSlots[slot].globalVoiceLeading);
+    snprintf(values[4], sizeof(values[4]), "%.2f", scriptSlots[slot].globalEnergy);
     
-    // Force first draw if last values were never set
-    bool firstDraw = (scriptSlots[slot].lastSelectedGlobalParam == 255);
-    
-    // Check what changed (use tolerance for float comparisons to avoid flicker)
-    bool selectionChanged = (scriptSlots[slot].selectedGlobalParam != scriptSlots[slot].lastSelectedGlobalParam);
-    bool editStateChanged = (scriptSlots[slot].editingGlobalParam != scriptSlots[slot].lastEditingGlobalParam);
-    bool keyChanged = (scriptSlots[slot].globalKey != scriptSlots[slot].lastGlobalKey);
-    bool theoryChanged = (scriptSlots[slot].globalTheoryMode != scriptSlots[slot].lastGlobalTheoryMode);
-    
-    // Use tolerance for float comparisons to avoid flicker from precision issues
-    bool voiceLeadingChanged = (fabs(scriptSlots[slot].globalVoiceLeading - scriptSlots[slot].lastGlobalVoiceLeading) > 0.001f);
-    bool energyChanged = (fabs(scriptSlots[slot].globalEnergy - scriptSlots[slot].lastGlobalEnergy) > 0.001f);
-    
-    bool valuesChanged[4] = {keyChanged, theoryChanged, voiceLeadingChanged, energyChanged};
-    
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 5; i++) {
         int16_t boxX = boxStartX + i * (boxW + boxGap);
         
-        // Determine if this box needs redrawing
-        bool needsRedraw = firstDraw || selectionChanged || editStateChanged || valuesChanged[i];
-        
-        if (!needsRedraw) continue;
-        
-        // Determine color based on selection and edit state
+        // Determine current state for this specific box
         bool isSelected = (scriptSlots[slot].selectedGlobalParam == i);
         bool isEditing = (isSelected && scriptSlots[slot].editingGlobalParam);
+        bool wasSelected = (scriptSlots[slot].lastSelectedGlobalParam == i);
+        bool wasEditing = (wasSelected && scriptSlots[slot].lastEditingGlobalParam);
+        
+        // Only redraw if: first draw, selection state changed, OR this box is selected and a value changed
+        bool selectionStateChanged = (isSelected != wasSelected) || (isEditing != wasEditing);
+        
+        // Check if values actually changed
+        bool anyValueChanged = false;
+        if (scriptSlots[slot].globalKey != scriptSlots[slot].lastGlobalKey) anyValueChanged = true;
+        if (scriptSlots[slot].globalDegree != scriptSlots[slot].lastGlobalDegree) anyValueChanged = true;
+        if (scriptSlots[slot].globalTheoryMode != scriptSlots[slot].lastGlobalTheoryMode) anyValueChanged = true;
+        if (fabs(scriptSlots[slot].globalVoiceLeading - scriptSlots[slot].lastGlobalVoiceLeading) > 0.001f) anyValueChanged = true;
+        if (fabs(scriptSlots[slot].globalEnergy - scriptSlots[slot].lastGlobalEnergy) > 0.001f) anyValueChanged = true;
+        
+        // Redraw if: first draw, selection changed, OR if value changed and box is selected
+        bool needsRedraw = isFirstDraw || selectionStateChanged || (anyValueChanged && isSelected);
+        
+        if (!needsRedraw) continue;
         
         uint16_t boxColor;
         uint16_t textColor;
@@ -874,9 +880,13 @@ void UI::drawGlobalParameterBoxes(uint8_t slot, int16_t x, int16_t y, int16_t w,
     scriptSlots[slot].lastSelectedGlobalParam = scriptSlots[slot].selectedGlobalParam;
     scriptSlots[slot].lastEditingGlobalParam = scriptSlots[slot].editingGlobalParam;
     scriptSlots[slot].lastGlobalKey = scriptSlots[slot].globalKey;
+    scriptSlots[slot].lastGlobalDegree = scriptSlots[slot].globalDegree;
     scriptSlots[slot].lastGlobalTheoryMode = scriptSlots[slot].globalTheoryMode;
     scriptSlots[slot].lastGlobalVoiceLeading = scriptSlots[slot].globalVoiceLeading;
     scriptSlots[slot].lastGlobalEnergy = scriptSlots[slot].globalEnergy;
+    
+    // Clear the redraw flag after drawing
+    scriptSlots[slot].globalParamNeedsRedraw = false;
 }
 
 void UI::drawChordSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h) {
@@ -902,6 +912,11 @@ void UI::drawChordSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16
     bool chordCountChanged = (scriptSlots[slot].chordCount != scriptSlots[slot].lastChordCount);
 
     bool firstDraw = overlayJustClosed || chordCountChanged || (scriptSlots[slot].lastCurrentChordSlot == 255);
+    
+    // Force global parameter redraw when overlay just closed or on first draw
+    if (overlayJustClosed || firstDraw) {
+        scriptSlots[slot].globalParamNeedsRedraw = true;
+    }
 
     // When an overlay is active, keep base visuals off and force full redraw when it closes
     if (overlayBlocksBase) {
@@ -2446,11 +2461,11 @@ void UI::navigateBeatCountPicker(uint8_t slot, int8_t delta) {
     if (slot >= MAX_SCRIPTS) return;
     if (!scriptSlots[slot].beatCountPickerActive) return;
     
-    // Cyclic navigation through 4 parameters: beat count -> inversion -> spread -> theory
+    // Cyclic navigation through 5 parameters: beat count -> inversion -> spread -> theory -> done
     uint8_t currentSelection = scriptSlots[slot].selectedChordParam;
     int16_t newSelection = (int16_t)currentSelection + delta;
-    if (newSelection < 0) newSelection = 3;
-    if (newSelection > 3) newSelection = 0;
+    if (newSelection < 0) newSelection = 4;  // Wrap to done
+    if (newSelection > 4) newSelection = 0;  // Wrap to beats
     scriptSlots[slot].selectedChordParam = (uint8_t)newSelection;
 }
 
@@ -2519,12 +2534,24 @@ void UI::drawBeatCountPickerOverlay(uint8_t slot, int16_t x, int16_t y, int16_t 
     
     bool firstDraw = !wasActive;
     
-    // Layout: 4 boxes in a row (beat count, inversion, spread, theory)
-    const char* labels[] = {"beats", "invert", "spread", "theory"};
-    int16_t boxW = (overlayW - 15) / 4;  // 4 boxes with 5px gaps
-    int16_t boxH = 50;
-    int16_t boxGap = 5;
-    int16_t boxY = overlayY + 30;
+    // Layout: Two rows - beats on top (centered, smaller), inversion/spread/theory on bottom
+    const char* labels[] = {"beats", "inversion", "spread", "theory"};
+    
+    // Bottom row: inversion, spread, theory (3 boxes) - 10% less wide, 10% less tall
+    int16_t bottomBoxW = ((overlayW - 20) / 3) * 0.9;  // 3 boxes with gaps, 10% less wide
+    int16_t bottomBoxH = 45;  // 10% reduction from 50: 50 * 0.9 = 45
+    int16_t bottomBoxGap = 10;
+    int16_t bottomBoxStartX = overlayX + 10;  // Left edge of first bottom box
+    
+    // Top row: beats button - spans from left edge of inversion to right edge of theory
+    int16_t firstBottomBoxX = bottomBoxStartX;
+    int16_t lastBottomBoxX = bottomBoxStartX + 2 * (bottomBoxW + bottomBoxGap);
+    int16_t topBoxW = (lastBottomBoxX + bottomBoxW) - firstBottomBoxX;  // Span full width
+    int16_t topBoxH = 45;   // 10% reduction from 50: 50 * 0.9 = 45
+    int16_t topBoxX = firstBottomBoxX;  // Align with bottom boxes
+    int16_t topBoxY = overlayY + 25;
+    
+    int16_t bottomBoxY = topBoxY + topBoxH + 10;  // Below beats box with spacing
     
     // Get current and previous chord parameters for comparison
     uint8_t selectedChordSlot = scriptSlots[slot].selectedChordSlot;
@@ -2553,9 +2580,63 @@ void UI::drawBeatCountPickerOverlay(uint8_t slot, int16_t x, int16_t y, int16_t 
     // Theory mode names for display
     static const char* theoryModeNames[] = {"func", "diat", "moda", "chro", "all"};
     
-    // Draw 4 parameter boxes
-    for (int i = 0; i < 4; i++) {
-        int16_t boxX = overlayX + 8 + i * (boxW + boxGap);
+    // Draw beats box (top row, parameter 0)
+    {
+        int i = 0;
+        bool isSelected = (scriptSlots[slot].selectedChordParam == i);
+        bool isEditing = isSelected && scriptSlots[slot].editingChordParam;
+        
+        // Determine colors
+        uint16_t boxColor;
+        uint16_t textColor;
+        if (isEditing) {
+            boxColor = COLOR_HIGHLIGHT;  // Yellow
+            textColor = COLOR_BG;
+        } else if (isSelected) {
+            boxColor = COLOR_ACCENT;  // Cyan
+            textColor = COLOR_BG;
+        } else {
+            boxColor = 0x0820;  // Dark gray
+            textColor = COLOR_FG;
+        }
+        
+        // Check what changed
+        bool needsRedraw = firstDraw || isSelected != (scriptSlots[slot].lastSelectedChordParam == i) ||
+                          isEditing != (scriptSlots[slot].lastEditingChordParam && scriptSlots[slot].lastSelectedChordParam == i);
+        
+        // Check if parameter values changed
+        uint8_t lastBeatCount;
+        if (scriptSlots[slot].lastEditingChordParam && scriptSlots[slot].lastSelectedChordParam == 0) {
+            lastBeatCount = scriptSlots[slot].lastBeatCountSelection;
+        } else {
+            lastBeatCount = scriptSlots[slot].chordBeats[selectedChordSlot];
+        }
+        if (beatCount != lastBeatCount) needsRedraw = true;
+        
+        if (needsRedraw) {
+            // Draw box
+            display->fillRoundRect(topBoxX, topBoxY, topBoxW, topBoxH, 4, boxColor);
+            
+            // Draw label
+            display->drawText(topBoxX + 8, topBoxY + 5, labels[i], textColor, FONT_SMALL);
+            
+            // Draw value - much larger, centered vertically
+            char valueStr[12];
+            snprintf(valueStr, sizeof(valueStr), "%d", beatCount);
+            
+            int16_t bx, by; uint16_t bw, bh;
+            display->getTextBounds(valueStr, 0, 0, &bx, &by, &bw, &bh, FONT_LARGE);
+            int16_t valueX = topBoxX + (topBoxW - bw) / 2 - bx;
+            int16_t valueY = topBoxY + (topBoxH - bh) / 2 - by;  // Vertical center
+            display->drawText(valueX, valueY, valueStr, textColor, FONT_LARGE);
+        }
+    }
+    
+    // Draw 3 parameter boxes on bottom row (inversion, spread, theory)
+    for (int i = 1; i < 4; i++) {
+        int16_t boxIdx = i - 1;  // 0-2 for positioning
+        int16_t boxX = bottomBoxStartX + boxIdx * (bottomBoxW + bottomBoxGap);
+        
         bool isSelected = (scriptSlots[slot].selectedChordParam == i);
         bool isEditing = isSelected && scriptSlots[slot].editingChordParam;
         
@@ -2578,16 +2659,6 @@ void UI::drawBeatCountPickerOverlay(uint8_t slot, int16_t x, int16_t y, int16_t 
                           isEditing != (scriptSlots[slot].lastEditingChordParam && scriptSlots[slot].lastSelectedChordParam == i);
         
         // Also check if parameter values changed
-        if (i == 0) {
-            // For beat count, compare the current displayed value with last
-            uint8_t lastBeatCount;
-            if (scriptSlots[slot].lastEditingChordParam && scriptSlots[slot].lastSelectedChordParam == 0) {
-                lastBeatCount = scriptSlots[slot].lastBeatCountSelection;
-            } else {
-                lastBeatCount = scriptSlots[slot].chordBeats[selectedChordSlot];
-            }
-            if (beatCount != lastBeatCount) needsRedraw = true;
-        }
         if (i == 1 && inversion != scriptSlots[slot].lastChordInversion) needsRedraw = true;
         if (i == 2 && fabs(spread - scriptSlots[slot].lastChordSpread) > 0.001f) needsRedraw = true;
         if (i == 3 && theoryMode != scriptSlots[slot].lastChordTheoryMode) needsRedraw = true;
@@ -2595,16 +2666,14 @@ void UI::drawBeatCountPickerOverlay(uint8_t slot, int16_t x, int16_t y, int16_t 
         if (!needsRedraw) continue;
         
         // Draw box
-        display->fillRoundRect(boxX, boxY, boxW, boxH, 4, boxColor);
+        display->fillRoundRect(boxX, bottomBoxY, bottomBoxW, bottomBoxH, 4, boxColor);
         
         // Draw label
-        display->drawText(boxX + 4, boxY + 5, labels[i], textColor, FONT_SMALL);
+        display->drawText(boxX + 4, bottomBoxY + 5, labels[i], textColor, FONT_SMALL);
         
         // Draw value
         char valueStr[12];
-        if (i == 0) {  // Beat count
-            snprintf(valueStr, sizeof(valueStr), "%d", beatCount);
-        } else if (i == 1) {  // Inversion
+        if (i == 1) {  // Inversion
             if (inversion == 255) {
                 snprintf(valueStr, sizeof(valueStr), "auto");
             } else {
@@ -2628,21 +2697,27 @@ void UI::drawBeatCountPickerOverlay(uint8_t slot, int16_t x, int16_t y, int16_t 
         
         int16_t bx, by; uint16_t bw, bh;
         display->getTextBounds(valueStr, 0, 0, &bx, &by, &bw, &bh, FONT_SMALL);
-        int16_t valueX = boxX + (boxW - bw) / 2 - bx;
-        int16_t valueY = boxY + 30;
+        int16_t valueX = boxX + (bottomBoxW - bw) / 2 - bx;
+        int16_t valueY = bottomBoxY + 30;
         display->drawText(valueX, valueY, valueStr, textColor, FONT_SMALL);
     }
     
-    // Draw navigation hint and "Done" button
-    display->drawText(overlayX + 10, overlayY + overlayH - 20, "turn: select, OK: edit", COLOR_DIM, FONT_SMALL);
-    
-    // Draw "Done" button in bottom right
+    // Draw "Done" button in bottom right of white box
     int16_t doneButtonX = overlayX + overlayW - 60;
     int16_t doneButtonY = overlayY + overlayH - 20;
     int16_t doneButtonW = 50;
     int16_t doneButtonH = 15;
-    display->fillRoundRect(doneButtonX, doneButtonY, doneButtonW, doneButtonH, 3, COLOR_ACCENT);
-    display->drawText(doneButtonX + 8, doneButtonY + 3, "done", COLOR_BG, FONT_SMALL);
+    
+    bool isDoneSelected = (scriptSlots[slot].selectedChordParam == 4);
+    uint16_t doneColor = isDoneSelected ? COLOR_ACCENT : 0x1082;  // Cyan when selected, dark gray otherwise
+    uint16_t doneTextColor = isDoneSelected ? COLOR_BG : COLOR_FG;
+    
+    display->fillRoundRect(doneButtonX, doneButtonY, doneButtonW, doneButtonH, 3, doneColor);
+    display->drawText(doneButtonX + 8, doneButtonY + 3, "done", doneTextColor, FONT_SMALL);
+    
+    // Draw navigation hint at the very bottom of screen (outside white box)
+    int16_t hintY = SCREEN_HEIGHT - 15;
+    display->drawText(10, hintY, "turn: select, OK: edit", COLOR_DIM, FONT_SMALL);
     
     // Update last values
     scriptSlots[slot].lastBeatCountSelection = beatCount;
@@ -2873,7 +2948,16 @@ void UI::adjustGlobalParam(uint8_t slot, int8_t delta) {
             }
             break;
             
-        case 1: // Theory Mode
+        case 1: // Degree
+            {
+                int16_t newDegree = (int16_t)scriptSlots[slot].globalDegree + delta;
+                if (newDegree < 0) newDegree = 6;  // DEGREE_LOCRIAN
+                if (newDegree > 6) newDegree = 0;  // DEGREE_MAJOR
+                scriptSlots[slot].globalDegree = (uint8_t)newDegree;
+            }
+            break;
+            
+        case 2: // Theory Mode
             {
                 int16_t newMode = (int16_t)scriptSlots[slot].globalTheoryMode + delta;
                 if (newMode < 0) newMode = 4;  // THEORY_ALL
@@ -2882,7 +2966,7 @@ void UI::adjustGlobalParam(uint8_t slot, int8_t delta) {
             }
             break;
             
-        case 2: // Voice Leading Compactness
+        case 3: // Voice Leading Compactness
             {
                 float newValue = scriptSlots[slot].globalVoiceLeading + (delta * 0.05f);
                 if (newValue < 0.0f) newValue = 0.0f;
@@ -2891,7 +2975,7 @@ void UI::adjustGlobalParam(uint8_t slot, int8_t delta) {
             }
             break;
             
-        case 3: // Energy
+        case 4: // Energy
             {
                 float newValue = scriptSlots[slot].globalEnergy + (delta * 0.05f);
                 if (newValue < 0.0f) newValue = 0.0f;
@@ -2907,6 +2991,7 @@ void UI::syncGlobalsFromScript(uint8_t slot, const GlobalParameters& globals) {
     
     // Detect actual changes in the source script
     uint8_t newKey = (uint8_t)globals.key;
+    uint8_t newDegree = (uint8_t)globals.degree;
     uint8_t newTheoryMode = (uint8_t)globals.theoryMode;
     float newVoiceLeading = globals.voiceLeadingCompactness;
     float newEnergy = globals.energy;
@@ -2914,6 +2999,9 @@ void UI::syncGlobalsFromScript(uint8_t slot, const GlobalParameters& globals) {
     // Only update if something actually changed, preserving last* tracking
     if (newKey != scriptSlots[slot].globalKey) {
         scriptSlots[slot].globalKey = newKey;
+    }
+    if (newDegree != scriptSlots[slot].globalDegree) {
+        scriptSlots[slot].globalDegree = newDegree;
     }
     if (newTheoryMode != scriptSlots[slot].globalTheoryMode) {
         scriptSlots[slot].globalTheoryMode = newTheoryMode;

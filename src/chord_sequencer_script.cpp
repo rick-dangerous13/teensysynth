@@ -29,6 +29,7 @@ ChordSequencerScript::ChordSequencerScript()
 
     // Initialize global parameters with sensible defaults
     globals.key = MKEY_C;
+    globals.degree = DEGREE_MAJOR;
     globals.theoryMode = THEORY_FUNCTIONAL;
     globals.voiceLeadingCompactness = 0.5f;
     globals.energy = 0.5f;

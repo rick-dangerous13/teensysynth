@@ -617,6 +617,22 @@ void ScriptManager::setChordSequencerKey(uint8_t slot, MusicalKey key) {
     chordSequencerInstances[slot]->setKey(key);
 }
 
+void ScriptManager::setChordSequencerDegree(uint8_t slot, ScaleDegree degree) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return;
+    }
+    
+    chordSequencerInstances[slot]->setDegree(degree);
+}
+
+ScaleDegree ScriptManager::getChordSequencerDegree(uint8_t slot) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return DEGREE_MAJOR;  // Default fallback
+    }
+    
+    return chordSequencerInstances[slot]->getDegree();
+}
+
 void ScriptManager::setChordSequencerTheoryMode(uint8_t slot, TheoryMode mode) {
     if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
         return;
