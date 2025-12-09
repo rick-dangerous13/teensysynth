@@ -393,6 +393,16 @@ bool ScriptManager::loadScriptFromLibrary(uint8_t slot, uint8_t libraryIndex) {
             poliquencerInstances[slot]->setDAC(nullptr, nullptr);
         }
         
+        // Connect to active chord sequencer if available
+        for (int i = 0; i < MAX_SCRIPTS; i++) {
+            if (chordSequencerInstances[i] != nullptr) {
+                Serial.print("Connecting Poliquencer to ChordSequencer in slot ");
+                Serial.println(i);
+                poliquencerInstances[slot]->setChordSequencer(chordSequencerInstances[i]);
+                break;  // Only connect to first active chord sequencer
+            }
+        }
+        
         // Set default tempo
         poliquencerInstances[slot]->setGlobalTempo(DEFAULT_CLOCK_BPM);
         Serial.print("Tempo set to ");
@@ -415,6 +425,15 @@ bool ScriptManager::loadScriptFromLibrary(uint8_t slot, uint8_t libraryIndex) {
             return false;
         }
         Serial.println("ChordSequencer begin() successful");
+        
+        // Connect to active poliquencer instances
+        for (int i = 0; i < MAX_SCRIPTS; i++) {
+            if (poliquencerInstances[i] != nullptr) {
+                Serial.print("Connecting ChordSequencer to Poliquencer in slot ");
+                Serial.println(i);
+                poliquencerInstances[i]->setChordSequencer(chordSequencerInstances[slot]);
+            }
+        }
         
         // Set default tempo
         chordSequencerInstances[slot]->setGlobalTempo(DEFAULT_CLOCK_BPM);

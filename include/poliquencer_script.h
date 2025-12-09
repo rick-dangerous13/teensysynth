@@ -14,6 +14,9 @@
 #include <Adafruit_MCP4725.h>
 #include "config.h"
 
+// Forward declaration to avoid circular includes
+class ChordSequencerScript;
+
 // Gate modes for each step
 enum GateMode {
     GATE_NORMAL = 0,  // Full gate output
@@ -44,6 +47,9 @@ public:
     
     // Set shared DAC instances
     void setDAC(Adafruit_MCP4725* dac1Ptr, Adafruit_MCP4725* dac2Ptr);
+    
+    // Set reference to chord sequencer for quantization
+    void setChordSequencer(ChordSequencerScript* chordSeq);
     
     // Step parameters
     void setStepValue(uint8_t step, int8_t semitones); // -12 to +12 (2 octaves)
@@ -79,6 +85,9 @@ private:
     Adafruit_MCP4725* dac2;  // Gate CV output
     bool dacInitialized;
     
+    // Chord sequencer reference for quantization
+    ChordSequencerScript* chordSequencer;
+    
     // Sequencer state
     int8_t stepValues[8];       // Step values in semitones (-12 to +12)
     uint8_t stepDurations[8];   // Duration in beats (1-8) for each step
@@ -113,6 +122,7 @@ private:
     uint8_t getNextStep();
     float calculateCVVoltage(int8_t stepValue);
     uint16_t voltageToDACValue(float volts);
+    float quantizeToScale(float volts, uint8_t rootNote, const int8_t scaleNotes[7]);
     void outputCV(float volts);
     void outputGate(bool high);
     void updatePortamento();

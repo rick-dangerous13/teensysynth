@@ -6,6 +6,7 @@
  */
 
 #include "poliquencer_script.h"
+#include "chord_sequencer_script.h"
 
 // Scale definitions (semitones from root)
 const int8_t PoliquencerScript::majorScale[7] = {0, 2, 4, 5, 7, 9, 11};
@@ -15,6 +16,7 @@ PoliquencerScript::PoliquencerScript()
     : dac1(nullptr)
     , dac2(nullptr)
     , dacInitialized(false)
+    , chordSequencer(nullptr)
     , currentStep(0)
     , beatCounter(0)
     , rootNote(0)  // C
@@ -95,6 +97,15 @@ void PoliquencerScript::setDAC(Adafruit_MCP4725* dac1Ptr, Adafruit_MCP4725* dac2
         if (dac1 == nullptr) Serial.println("  dac1 is NULL");
         if (dac2 == nullptr) Serial.println("  dac2 is NULL");
         Serial.println("  Running without CV output");
+    }
+}
+
+void PoliquencerScript::setChordSequencer(ChordSequencerScript* chordSeq) {
+    chordSequencer = chordSeq;
+    if (chordSeq != nullptr) {
+        Serial.println("Poliquencer: Chord sequencer attached for pitch quantization");
+    } else {
+        Serial.println("Poliquencer: Chord sequencer detached (will output chromatic)");
     }
 }
 
@@ -302,6 +313,45 @@ float PoliquencerScript::calculateCVVoltage(int8_t stepValue) {
     return voltage;
 }
 
+float PoliquencerScript::quantizeToScale(float volts, uint8_t rootNote, const int8_t scaleNotes[7]) {
+    // Quantize voltage to the nearest scale degree
+    // volts: 0-5V range (0V = C3, 2V = reference point for C4)
+    // rootNote: 0-11 (C to B)
+    // scaleNotes: 7 semitone offsets from root
+    
+    // Convert voltage to semitones from C3 (0V reference, but we use 2V = C4 offset)
+    float semitones = (volts - 2.0f) * 12.0f;
+    
+    // Calculate the target semitone within the octave, accounting for root note
+    float targetSemitone = semitones - rootNote;
+    
+    // Normalize to 0-12 range to find position within the octave
+    float octavePosition = fmod(targetSemitone, 12.0f);
+    if (octavePosition < 0.0f) octavePosition += 12.0f;
+    
+    // Find the closest scale degree
+    int8_t closestDegree = scaleNotes[0];
+    float closestDistance = fabsf(octavePosition - scaleNotes[0]);
+    
+    for (int i = 1; i < 7; i++) {
+        float distance = fabsf(octavePosition - scaleNotes[i]);
+        if (distance < closestDistance) {
+            closestDistance = distance;
+            closestDegree = scaleNotes[i];
+        }
+    }
+    
+    // Convert back to voltage
+    float quantizedSemitones = (semitones - octavePosition) + closestDegree + rootNote;
+    float quantizedVoltage = 2.0f + (quantizedSemitones / 12.0f);
+    
+    // Clamp to 0-5V range
+    if (quantizedVoltage < 0.0f) quantizedVoltage = 0.0f;
+    if (quantizedVoltage > 5.0f) quantizedVoltage = 5.0f;
+    
+    return quantizedVoltage;
+}
+
 uint16_t PoliquencerScript::voltageToDACValue(float volts) {
     // MCP4725 is 12-bit (0-4095)
     // Map 0-5V to 0-4095
@@ -320,20 +370,44 @@ void PoliquencerScript::outputCV(float volts) {
         return;
     }
     
+    // Apply quantization if chord sequencer is available and running
+    float outputVolts = volts;
+    if (chordSequencer != nullptr) {
+        // Get active chord info
+        uint8_t chordSlot = chordSequencer->getCurrentChordSlot();
+        uint8_t chordCount = chordSequencer->getChordCount();
+        
+        if (chordCount > 0 && chordSlot < chordCount) {
+            // Get scale notes for quantization (scale includes correct root and intervals)
+            ScaleInfo scale;
+            chordSequencer->getCurrentScale(&scale);
+            
+            // Quantize to the active chord's scale
+            // Use scale.rootNote since getCurrentScale() already sets it to the current chord's root
+            outputVolts = quantizeToScale(volts, scale.rootNote, (const int8_t*)scale.notes);
+            
+            // Debug: Log when quantization occurs
+            // Serial.print("Quantized: ");
+            // Serial.print(volts, 2);
+            // Serial.print("V -> ");
+            // Serial.println(outputVolts, 2);
+        }
+    }
+    
     // Select multiplexer channel for DAC1 (Pitch CV)
     Wire.beginTransmission(TCA9548A_ADDR);
     Wire.write(1 << MCP4725_CHANNEL_1);  // Select channel 0
     Wire.endTransmission();
     
-    // Update pitch CV on DAC1
-    uint16_t dacValue = voltageToDACValue(volts);
+    // Update pitch CV on DAC1 with quantized value
+    uint16_t dacValue = voltageToDACValue(outputVolts);
     dac1->setVoltage(dacValue, false);
     
     // Debug: Log CV changes
     static uint16_t lastDacValue = 0xFFFF;
     if (dacValue != lastDacValue) {
         Serial.print("DAC1 CV: ");
-        Serial.print(volts, 2);
+        Serial.print(outputVolts, 2);
         Serial.print("V (value: ");
         Serial.print(dacValue);
         Serial.println(")");

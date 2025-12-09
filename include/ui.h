@@ -158,6 +158,7 @@ public:
     void scrollMenu(int16_t delta);
     void resetMenuTracking();  // Call when switching screens
     void setMenuItemCount(int16_t count) { menuItemCount = count; }
+    void setSelectedScriptSlot(uint8_t slot) { selectedScriptSlot = slot; }
     int16_t getSelectedMenuItem();
     int16_t getSelectedSlot();
     void setSelectedSlot(int16_t slot) { selectedScriptSlot = slot; }

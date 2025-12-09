@@ -206,9 +206,20 @@ void UI::showMainMenu() {
 
 void UI::showScriptSelectScreen() {
     if (!display) return;
-    
-    menuItemCount = 1;  // Only slot 1 (for now, until we have 4 pairs of CV/Gate jacks)
-    
+
+    // Choose which slot to display: prefer currently selected, otherwise first active
+    uint8_t slotToShow = selectedScriptSlot;
+    if (slotToShow >= MAX_SCRIPTS || !scriptSlots[slotToShow].active) {
+        slotToShow = 0;
+        for (int i = 0; i < MAX_SCRIPTS; i++) {
+            if (scriptSlots[i].active) {
+                slotToShow = i;
+                break;
+            }
+        }
+    }
+    selectedScriptSlot = slotToShow;
+
     // Only do full redraw if this is initial display
     if (lastMenuSelection == -1) {
         display->clear();
@@ -217,7 +228,7 @@ void UI::showScriptSelectScreen() {
         }
         drawFooter("OK: load", "BACK: menu");
         lastMenuSelection = menuSelection;
-        
+
         // Reset drawing state for all active scripts to force full redraw (only on initial display)
         for (int i = 0; i < MAX_SCRIPTS; i++) {
             if (scriptSlots[i].active) {
@@ -232,11 +243,9 @@ void UI::showScriptSelectScreen() {
             }
         }
     }
-    
-    // Always redraw script slots - only slot 0 for now
-    menuSelection = 0;  // Force selection to slot 0
-    selectedScriptSlot = 0;
-    drawScriptSlot(0, true);  // Always selected since it's the only available slot
+
+    // Draw the selected slot full-screen
+    drawScriptSlot(slotToShow, true);
 }
 
 void UI::showScriptLibraryScreen(ScriptManager* scriptMgr) {
@@ -433,7 +442,10 @@ int16_t UI::getSelectedMenuItem() {
 }
 
 int16_t UI::getSelectedSlot() {
-    return menuSelection;
+    // Use the currently selected script slot (tracked separately from menuSelection)
+    if (selectedScriptSlot < 0) return 0;
+    if (selectedScriptSlot >= MAX_SCRIPTS) return MAX_SCRIPTS - 1;
+    return selectedScriptSlot;
 }
 
 const char* UI::getSelectedScriptPath() {

@@ -185,8 +185,14 @@ void handleMainMenuState() {
 void handleScriptSelectState() {
     static unsigned long lastRefresh = 0;
     
-    // Check if touch test is running in slot 0
-    bool isTouchTest = (ui.getScriptType(0) == 3);
+    // Active slot is whichever script the UI is currently showing
+    uint8_t activeSlot = ui.getSelectedSlot();
+    if (activeSlot >= MAX_SCRIPTS) {
+        activeSlot = 0;
+    }
+    
+    // Check if touch test is running in the active slot
+    bool isTouchTest = (ui.getScriptType(activeSlot) == 3);
     
     // Log all input events for touch test mode
     if (isTouchTest) {
@@ -296,8 +302,8 @@ void handleScriptSelectState() {
     // Handle encoder input
     int scrollDelta = input.getEncoderDelta();
     if (scrollDelta != 0) {
-        // If slot 0 is active, adjust parameters based on script type
-        if (scriptManager.isScriptRunning(0)) {
+        // Adjust parameters for the active slot based on script type
+        if (scriptManager.isScriptRunning(activeSlot)) {
             uint8_t dummy;
             int8_t dummySteps[8];
             uint8_t dummyDurations[8];
@@ -308,60 +314,60 @@ void handleScriptSelectState() {
             // Try LFO first
             uint8_t waveType;
             float phase;
-            if (scriptManager.getLFOWaveformData(0, &waveType, &phase)) {
-                uint8_t editParam = ui.getLFOEditParam(0);
+            if (scriptManager.getLFOWaveformData(activeSlot, &waveType, &phase)) {
+                uint8_t editParam = ui.getLFOEditParam(activeSlot);
                 
                 if (editParam == 0) {
                     // Waveform editing
-                    ui.adjustLFOWaveform(0, scrollDelta);
-                    scriptManager.setLFOWaveform(0, ui.getLFOWaveType(0));
+                    ui.adjustLFOWaveform(activeSlot, scrollDelta);
+                    scriptManager.setLFOWaveform(activeSlot, ui.getLFOWaveType(activeSlot));
                 } else if (editParam == 1) {
                     // Frequency editing
-                    ui.adjustLFOFrequency(0, scrollDelta);
-                    scriptManager.setLFOFrequency(0, ui.getLFOFrequency(0));
+                    ui.adjustLFOFrequency(activeSlot, scrollDelta);
+                    scriptManager.setLFOFrequency(activeSlot, ui.getLFOFrequency(activeSlot));
                 } else if (editParam == 2) {
                     // Level editing
-                    ui.adjustLFOLevel(0, scrollDelta);
-                    scriptManager.setLFOLevel(0, ui.getLFOLevel(0));
+                    ui.adjustLFOLevel(activeSlot, scrollDelta);
+                    scriptManager.setLFOLevel(activeSlot, ui.getLFOLevel(activeSlot));
                 }
             }
             // Try regular sequencer
-            else if (scriptManager.getSequencerData(0, &dummy, dummySteps, dummyDurations)) {
-                uint8_t editStep = ui.getSequencerEditStep(0);
-                if (ui.isEditingDuration(0)) {
+            else if (scriptManager.getSequencerData(activeSlot, &dummy, dummySteps, dummyDurations)) {
+                uint8_t editStep = ui.getSequencerEditStep(activeSlot);
+                if (ui.isEditingDuration(activeSlot)) {
                     // Editing duration - adjust dial value
-                    ui.adjustSequencerStepDuration(0, scrollDelta);
-                    scriptManager.setSequencerStepDuration(0, editStep, dummyDurations[editStep] + scrollDelta);
+                    ui.adjustSequencerStepDuration(activeSlot, scrollDelta);
+                    scriptManager.setSequencerStepDuration(activeSlot, editStep, dummyDurations[editStep] + scrollDelta);
                 } else {
                     // Editing pitch - adjust slider value
-                    ui.adjustSequencerStepValue(0, scrollDelta);
-                    scriptManager.setSequencerStepValue(0, editStep, dummySteps[editStep] + scrollDelta);
+                    ui.adjustSequencerStepValue(activeSlot, scrollDelta);
+                    scriptManager.setSequencerStepValue(activeSlot, editStep, dummySteps[editStep] + scrollDelta);
                 }
             } 
             // Try poliquencer sequencer
-            else if (scriptManager.getPoliquencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam)) {
-                uint8_t editStep = ui.getSequencerEditStep(0);
-                uint8_t editMode = ui.getSequencerEditMode(0);
+            else if (scriptManager.getPoliquencerData(activeSlot, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam)) {
+                uint8_t editStep = ui.getSequencerEditStep(activeSlot);
+                uint8_t editMode = ui.getSequencerEditMode(activeSlot);
                 
                 if (editMode == 0) {
                     // Mode 0: Editing pitch - adjust lever value
-                    ui.adjustSequencerStepValue(0, scrollDelta);
-                    scriptManager.setPoliquencerStepValue(0, editStep, dummySteps[editStep] + scrollDelta);
+                    ui.adjustSequencerStepValue(activeSlot, scrollDelta);
+                    scriptManager.setPoliquencerStepValue(activeSlot, editStep, dummySteps[editStep] + scrollDelta);
                 } else if (editMode == 1) {
                     // Mode 1: Editing gate mode - cycle through switch positions
                     // Get current data first
-                    scriptManager.getPoliquencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam);
+                    scriptManager.getPoliquencerData(activeSlot, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam);
                     // Calculate new gate mode
                     int8_t newMode = (int8_t)dummyGateModes[editStep] + scrollDelta;
                     if (newMode < 0) newMode = 2;
                     if (newMode > 2) newMode = 0;
                     // Update UI and script manager
-                    ui.adjustStepGateMode(0, scrollDelta);
-                    scriptManager.setPoliquencerStepGateMode(0, editStep, (uint8_t)newMode);
+                    ui.adjustStepGateMode(activeSlot, scrollDelta);
+                    scriptManager.setPoliquencerStepGateMode(activeSlot, editStep, (uint8_t)newMode);
                 } else if (editMode == 2) {
                     // Mode 2: Editing duration - adjust crank value
-                    ui.adjustSequencerStepDuration(0, scrollDelta);
-                    scriptManager.setPoliquencerStepDuration(0, editStep, dummyDurations[editStep] + scrollDelta);
+                    ui.adjustSequencerStepDuration(activeSlot, scrollDelta);
+                    scriptManager.setPoliquencerStepDuration(activeSlot, editStep, dummyDurations[editStep] + scrollDelta);
                 }
             }
             // Try ChordSequencer
@@ -372,24 +378,24 @@ void handleScriptSelectState() {
                 uint8_t currentChordSlot;
                 uint8_t beatCounter;
                 uint8_t chordCount;
-                if (scriptManager.getChordSequencerData(0, chordRoots, chordTypes, chordBeats, &currentChordSlot, &beatCounter, &chordCount)) {
-                    if (ui.isBeatCountPickerActive(0)) {
+                if (scriptManager.getChordSequencerData(activeSlot, chordRoots, chordTypes, chordBeats, &currentChordSlot, &beatCounter, &chordCount)) {
+                    if (ui.isBeatCountPickerActive(activeSlot)) {
                         // Navigation through 4 chord parameters
-                        if (ui.isEditingChordParam(0)) {
+                        if (ui.isEditingChordParam(activeSlot)) {
                             // In edit mode - adjust current parameter value
-                            ui.adjustChordParam(0, scrollDelta);
+                            ui.adjustChordParam(activeSlot, scrollDelta);
                         } else {
                             // Navigate through the 4 parameters
-                            ui.navigateBeatCountPicker(0, scrollDelta);
+                            ui.navigateBeatCountPicker(activeSlot, scrollDelta);
                         }
-                    } else if (ui.isChordListActive(0)) {
-                        ui.navigateChordList(0, scrollDelta);
-                    } else if (ui.isEditingGlobalParam(0)) {
+                    } else if (ui.isChordListActive(activeSlot)) {
+                        ui.navigateChordList(activeSlot, scrollDelta);
+                    } else if (ui.isEditingGlobalParam(activeSlot)) {
                         // In global param edit mode - adjust value
-                        ui.adjustGlobalParam(0, scrollDelta);
+                        ui.adjustGlobalParam(activeSlot, scrollDelta);
                     } else {
                         // Navigation includes: chords, plus box, and 4 global param boxes
-                        uint8_t chordCountUi = ui.getChordCount(0);
+                        uint8_t chordCountUi = ui.getChordCount(activeSlot);
                         if (chordCountUi > MAX_CHORD_SLOTS) chordCountUi = MAX_CHORD_SLOTS;
                         
                         uint8_t chordBoxes = chordCountUi;
@@ -399,17 +405,17 @@ void handleScriptSelectState() {
                         
                         // Current selection: chord slot (0..chordCount-1), plus box (chordCount), or global param (via selectedGlobalParam)
                         uint8_t currentIndex = 0;
-                        uint8_t selectedChord = ui.getSelectedChordSlot(0);
-                        uint8_t selectedGlobal = ui.getSelectedGlobalParam(0);
+                        uint8_t selectedChord = ui.getSelectedChordSlot(activeSlot);
+                        uint8_t selectedGlobal = ui.getSelectedGlobalParam(activeSlot);
                         
                         // Initialize selection if nothing is selected (only on first interaction)
                         if (selectedChord == 255 && selectedGlobal == 255) {
                             // Default to plus box (or first global if no plus box available)
                             if (plusBoxes > 0) {
-                                ui.setSelectedChordSlot(0, chordBoxes);  // Select plus box (index = chordBoxes)
+                                ui.setSelectedChordSlot(activeSlot, chordBoxes);  // Select plus box (index = chordBoxes)
                                 selectedChord = chordBoxes;  // Update local variable
                             } else {
-                                ui.setSelectedGlobalParam(0, 0);  // Select first global param
+                                ui.setSelectedGlobalParam(activeSlot, 0);  // Select first global param
                                 selectedGlobal = 0;  // Update local variable
                             }
                         }
@@ -436,17 +442,17 @@ void handleScriptSelectState() {
                         
                         if (currentIndex < chordBoxes) {
                             // Chord selection
-                            ui.setSelectedChordSlot(0, currentIndex);
-                            ui.setSelectedGlobalParam(0, 255);  // Deselect global
+                            ui.setSelectedChordSlot(activeSlot, currentIndex);
+                            ui.setSelectedGlobalParam(activeSlot, 255);  // Deselect global
                         } else if (currentIndex == plusBoxIndex && plusBoxes > 0) {
                             // Plus box selection
-                            ui.setSelectedChordSlot(0, chordBoxes);
-                            ui.setSelectedGlobalParam(0, 255);  // Deselect global
+                            ui.setSelectedChordSlot(activeSlot, chordBoxes);
+                            ui.setSelectedGlobalParam(activeSlot, 255);  // Deselect global
                         } else {
                             // Global param selection
                             uint8_t globalIdx = currentIndex - firstGlobalIndex;
-                            ui.setSelectedChordSlot(0, 255);  // Deselect chord
-                            ui.setSelectedGlobalParam(0, globalIdx);
+                            ui.setSelectedChordSlot(activeSlot, 255);  // Deselect chord
+                            ui.setSelectedGlobalParam(activeSlot, globalIdx);
                         }
                     }
                 }
@@ -455,14 +461,7 @@ void handleScriptSelectState() {
     }
     
     // Handle button input for ChordSequencer
-    if (input.isButtonPressed(BTN_OK) && scriptManager.isScriptRunning(0)) {
-        uint8_t dummy;
-        int8_t dummySteps[8];
-        uint8_t dummyDurations[8];
-        uint8_t dummyGateModes[8];
-        uint8_t dummyDirection;
-        bool dummySteam;
-        
+    if (input.isButtonPressed(BTN_OK) && scriptManager.isScriptRunning(activeSlot)) {
         // Check if ChordSequencer is running
         uint8_t chordRoots[MAX_CHORD_SLOTS];
         uint8_t chordTypes[MAX_CHORD_SLOTS];
@@ -470,26 +469,26 @@ void handleScriptSelectState() {
         uint8_t currentChordSlot;
         uint8_t beatCounter;
         uint8_t chordCount;
-        if (scriptManager.getChordSequencerData(0, chordRoots, chordTypes, chordBeats, &currentChordSlot, &beatCounter, &chordCount)) {
-            if (ui.isBeatCountPickerActive(0)) {
-                uint8_t selectedParam = ui.getSelectedChordParam(0);
+        if (scriptManager.getChordSequencerData(activeSlot, chordRoots, chordTypes, chordBeats, &currentChordSlot, &beatCounter, &chordCount)) {
+            if (ui.isBeatCountPickerActive(activeSlot)) {
+                uint8_t selectedParam = ui.getSelectedChordParam(activeSlot);
                 
-                if (ui.isEditingChordParam(0)) {
+                if (ui.isEditingChordParam(activeSlot)) {
                     // Currently editing a parameter - save and exit edit mode
-                    ui.exitChordParamEdit(0, true);
+                    ui.exitChordParamEdit(activeSlot, true);
                 } else if (selectedParam == 4) {
                     // "Done" button selected - close the picker
-                    ui.finalizeBeatCountPicker(0);
+                    ui.finalizeBeatCountPicker(activeSlot);
                 } else {
                     // Parameter box selected - enter edit mode
-                    ui.enterChordParamEdit(0);
+                    ui.enterChordParamEdit(activeSlot);
                 }
-            } else if (ui.isChordListActive(0)) {
-                uint8_t appliedSlot = ui.selectFromChordList(0);
+            } else if (ui.isChordListActive(activeSlot)) {
+                uint8_t appliedSlot = ui.selectFromChordList(activeSlot);
                 if (appliedSlot < MAX_CHORD_SLOTS) {
-                    uint8_t newRoot = ui.getChordRoot(0, appliedSlot);
-                    uint8_t newType = ui.getChordType(0, appliedSlot);
-                    scriptManager.setChordSequencerChord(0, appliedSlot, newRoot, newType);
+                    uint8_t newRoot = ui.getChordRoot(activeSlot, appliedSlot);
+                    uint8_t newType = ui.getChordType(activeSlot, appliedSlot);
+                    scriptManager.setChordSequencerChord(activeSlot, appliedSlot, newRoot, newType);
                     
                     // After selecting a chord from the library, get its current beat count
                     // If it's a new chord being added, default to 8 beats
@@ -502,54 +501,54 @@ void handleScriptSelectState() {
                     uint8_t currentChordSlot;
                     uint8_t beatCounter;
                     uint8_t chordCount;
-                    if (scriptManager.getChordSequencerData(0, chordRoots, chordTypes, chordBeats, &currentChordSlot, &beatCounter, &chordCount)) {
+                    if (scriptManager.getChordSequencerData(activeSlot, chordRoots, chordTypes, chordBeats, &currentChordSlot, &beatCounter, &chordCount)) {
                         if (appliedSlot < chordCount) {
                             initialBeats = chordBeats[appliedSlot];
                         }
                     }
                     
                     // Open beat count picker with appropriate default
-                    ui.openBeatCountPicker(0, initialBeats);
-                    ui.setChordListTarget(0, appliedSlot);  // Set target for beat confirmation
+                    ui.openBeatCountPicker(activeSlot, initialBeats);
+                    ui.setChordListTarget(activeSlot, appliedSlot);  // Set target for beat confirmation
                 }
-            } else if (ui.isEditingGlobalParam(0)) {
+            } else if (ui.isEditingGlobalParam(activeSlot)) {
                 // Exit global param edit mode and save changes
-                uint8_t selectedGlobal = ui.getSelectedGlobalParam(0);
-                ui.exitGlobalParamEdit(0, true);
+                uint8_t selectedGlobal = ui.getSelectedGlobalParam(activeSlot);
+                ui.exitGlobalParamEdit(activeSlot, true);
                 
                 // Sync changed values to script manager
                 GlobalParameters currentGlobals;
-                if (scriptManager.getChordSequencerGlobals(0, &currentGlobals)) {
+                if (scriptManager.getChordSequencerGlobals(activeSlot, &currentGlobals)) {
                     if (selectedGlobal == 0) {
-                        scriptManager.setChordSequencerRoot(0, (MusicalRoot)ui.getGlobalRoot(0));
+                        scriptManager.setChordSequencerRoot(activeSlot, (MusicalRoot)ui.getGlobalRoot(activeSlot));
                     } else if (selectedGlobal == 1) {
-                        scriptManager.setChordSequencerDegree(0, (ScaleDegree)ui.getGlobalDegree(0));
+                        scriptManager.setChordSequencerDegree(activeSlot, (ScaleDegree)ui.getGlobalDegree(activeSlot));
                     } else if (selectedGlobal == 2) {
-                        scriptManager.setChordSequencerTheoryMode(0, (TheoryMode)ui.getGlobalTheoryMode(0));
+                        scriptManager.setChordSequencerTheoryMode(activeSlot, (TheoryMode)ui.getGlobalTheoryMode(activeSlot));
                     } else if (selectedGlobal == 3) {
-                        scriptManager.setChordSequencerVoiceLeading(0, ui.getGlobalVoiceLeading(0));
+                        scriptManager.setChordSequencerVoiceLeading(activeSlot, ui.getGlobalVoiceLeading(activeSlot));
                     } else if (selectedGlobal == 4) {
-                        scriptManager.setChordSequencerEnergy(0, ui.getGlobalEnergy(0));
+                        scriptManager.setChordSequencerEnergy(activeSlot, ui.getGlobalEnergy(activeSlot));
                     }
                 }
             } else {
                 // Check if a global param is selected
-                uint8_t selectedGlobal = ui.getSelectedGlobalParam(0);
+                uint8_t selectedGlobal = ui.getSelectedGlobalParam(activeSlot);
                 
                 if (selectedGlobal != 255) {
                     // Enter global param edit mode
-                    ui.enterGlobalParamEdit(0);
+                    ui.enterGlobalParamEdit(activeSlot);
                 } else {
                     // Chord or plus box selected - open chord list to select/change chord
-                    uint8_t targetSlot = ui.getSelectedChordSlot(0);
-                    ui.openChordList(0, targetSlot);
+                    uint8_t targetSlot = ui.getSelectedChordSlot(activeSlot);
+                    ui.openChordList(activeSlot, targetSlot);
                 }
             }
         }
     }
     
     // Handle touch input for Poliquencer
-    if (input.wasTouched() && scriptManager.isScriptRunning(0)) {
+    if (input.wasTouched() && scriptManager.isScriptRunning(activeSlot)) {
         int16_t touchX, touchY;
         input.getTouchPoint(&touchX, &touchY);
         
@@ -561,12 +560,11 @@ void handleScriptSelectState() {
         bool dummySteam;
         
         // Check if Poliquencer is running
-        if (scriptManager.getPoliquencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam)) {
+        if (scriptManager.getPoliquencerData(activeSlot, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam)) {
             // Poliquencer layout: Calculate positions dynamically based on screen size
             // Slot 0 content area: y=40 (title margin), h=140 (SCREEN_HEIGHT/2 - title)
             int16_t slotContentY = 40;
             int16_t slotContentH = (SCREEN_HEIGHT / 2) - 20;
-            int16_t leverH = 160;
             int16_t switchH = 22;
             int16_t crankH = 55;
             int16_t spacing = 3;
@@ -588,11 +586,11 @@ void handleScriptSelectState() {
                 // Determine which control type based on Y position
                 if (touchY >= leverY && touchY < leverEndY) {
                     // Levers area - touch upper half to increase, lower half to decrease
-                    ui.setSequencerEditStep(0, step);
-                    ui.setSequencerEditMode(0, 0);  // Lever mode
+                    ui.setSequencerEditStep(activeSlot, step);
+                    ui.setSequencerEditMode(activeSlot, 0);  // Lever mode
                     
                     // Get current value
-                    scriptManager.getPoliquencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam);
+                    scriptManager.getPoliquencerData(activeSlot, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam);
                     int8_t currentValue = dummySteps[step];
                     
                     // Calculate midpoint of lever area
@@ -602,22 +600,22 @@ void handleScriptSelectState() {
                         // Upper half - increase pitch
                         int8_t newValue = currentValue + 1;
                         if (newValue > 12) newValue = 12;  // Clamp to +12 semitones
-                        scriptManager.setPoliquencerStepValue(0, step, newValue);
+                        scriptManager.setPoliquencerStepValue(activeSlot, step, newValue);
                     } else {
                         // Lower half - decrease pitch
                         int8_t newValue = currentValue - 1;
                         if (newValue < -12) newValue = -12;  // Clamp to -12 semitones
-                        scriptManager.setPoliquencerStepValue(0, step, newValue);
+                        scriptManager.setPoliquencerStepValue(activeSlot, step, newValue);
                     }
                 } else if (touchY >= switchY && touchY < crankY) {
                     // Switches area
-                    ui.setSequencerEditStep(0, step);
-                    ui.setSequencerEditMode(0, 1);  // Switch mode
+                    ui.setSequencerEditStep(activeSlot, step);
+                    ui.setSequencerEditMode(activeSlot, 1);  // Switch mode
                     // Toggle switch cycles: down(1)→center(2)→up(0)→center(2)→down(1)→center(2)...
                     // Gate modes: 0=NORMAL(up), 1=SKIP(down), 2=SLIDE(center)
-                    scriptManager.getPoliquencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam);
+                    scriptManager.getPoliquencerData(activeSlot, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam);
                     uint8_t currentMode = dummyGateModes[step];
-                    uint8_t toggleDir = ui.getToggleDirection(0, step);
+                    uint8_t toggleDir = ui.getToggleDirection(activeSlot, step);
                     uint8_t newMode;
                     
                     if (currentMode == 2) {
@@ -625,11 +623,11 @@ void handleScriptSelectState() {
                         if (toggleDir == 0) {
                             newMode = 0;  // center → up
                             // After reaching up, next direction is toward down
-                            ui.setToggleDirection(0, step, 1);
+                            ui.setToggleDirection(activeSlot, step, 1);
                         } else {
                             newMode = 1;  // center → down
                             // After reaching down, next direction is toward up
-                            ui.setToggleDirection(0, step, 0);
+                            ui.setToggleDirection(activeSlot, step, 0);
                         }
                     } else {
                         // At up or down - always go back to center
@@ -637,16 +635,16 @@ void handleScriptSelectState() {
                         // Direction stays the same - we'll continue in that direction from center
                     }
                     
-                    scriptManager.setPoliquencerStepGateMode(0, step, newMode);
+                    scriptManager.setPoliquencerStepGateMode(activeSlot, step, newMode);
                 } else if (touchY >= crankY && touchY < (slotContentY + slotContentH)) {
                     // Cranks area (wheel + number) - increment duration on any touch
-                    ui.setSequencerEditStep(0, step);
-                    ui.setSequencerEditMode(0, 2);  // Crank mode
+                    ui.setSequencerEditStep(activeSlot, step);
+                    ui.setSequencerEditMode(activeSlot, 2);  // Crank mode
                     // Get current duration and increment (1-8, wrapping)
-                    scriptManager.getPoliquencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam);
+                    scriptManager.getPoliquencerData(activeSlot, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam);
                     uint8_t newDuration = dummyDurations[step] + 1;
                     if (newDuration > 8) newDuration = 1;  // Wrap to 1
-                    scriptManager.setPoliquencerStepDuration(0, step, newDuration);
+                    scriptManager.setPoliquencerStepDuration(activeSlot, step, newDuration);
                 }
             }
         }
@@ -656,7 +654,7 @@ void handleScriptSelectState() {
     
     // Handle OK button - cycle edit parameter for LFO, advance step for sequencer, or go to library
     if (input.isButtonPressed(BTN_OK)) {
-        if (scriptManager.isScriptRunning(0)) {
+        if (scriptManager.isScriptRunning(activeSlot)) {
             uint8_t dummy;
             int8_t dummySteps[8];
             uint8_t dummyDurations[8];
@@ -670,25 +668,25 @@ void handleScriptSelectState() {
             // LFO: cycle edit parameter
             uint8_t waveType;
             float phase;
-            if (scriptManager.getLFOWaveformData(0, &waveType, &phase)) {
-                ui.advanceLFOEditParam(0);
+            if (scriptManager.getLFOWaveformData(activeSlot, &waveType, &phase)) {
+                ui.advanceLFOEditParam(activeSlot);
                 ui.showScriptSelectScreen();
                 return;
             }
             // Regular sequencer: advance edit step
-            else if (scriptManager.getSequencerData(0, &dummy, dummySteps, dummyDurations)) {
-                ui.advanceSequencerEditStep(0);
+            else if (scriptManager.getSequencerData(activeSlot, &dummy, dummySteps, dummyDurations)) {
+                ui.advanceSequencerEditStep(activeSlot);
                 ui.showScriptSelectScreen();
                 return;
             }
             // Poliquencer sequencer: advance edit step (lever1 -> crank1 -> lever2 -> crank2 ...)
-            else if (scriptManager.getPoliquencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam)) {
-                ui.advanceSequencerEditStep(0);
+            else if (scriptManager.getPoliquencerData(activeSlot, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam)) {
+                ui.advanceSequencerEditStep(activeSlot);
                 ui.showScriptSelectScreen();
                 return;
             }
             // ChordSequencer: button is already handled above, don't process further
-            else if (scriptManager.getChordSequencerData(0, chordRoots, chordTypes, chordBeats, &dummy, &dummy, nullptr)) {
+            else if (scriptManager.getChordSequencerData(activeSlot, chordRoots, chordTypes, chordBeats, &dummy, &dummy, nullptr)) {
                 return;  // ChordSequencer button handled already, prevent fallthrough
             }
         }
@@ -704,24 +702,24 @@ void handleScriptSelectState() {
     
     // Handle Back button - first check for chord sequencer overlays
     if (input.isButtonPressed(BTN_BACK)) {
-        // If a script is running in slot 0, check for overlays
-        if (scriptManager.isScriptRunning(0)) {
-            if (ui.isEditingGlobalParam(0)) {
+        // If a script is running in the active slot, check for overlays
+        if (scriptManager.isScriptRunning(activeSlot)) {
+            if (ui.isEditingGlobalParam(activeSlot)) {
                 // Cancel global param editing without saving
-                ui.exitGlobalParamEdit(0, false);
+                ui.exitGlobalParamEdit(activeSlot, false);
                 return;  // Handled - stay in SCRIPT_SELECT
-            } else if (ui.isEditingChordParam(0)) {
+            } else if (ui.isEditingChordParam(activeSlot)) {
                 // Exit chord param editing without saving, return to beat count picker
-                ui.exitChordParamEdit(0, false);
+                ui.exitChordParamEdit(activeSlot, false);
                 return;  // Handled - stay in SCRIPT_SELECT
-            } else if (ui.isBeatCountPickerActive(0)) {
+            } else if (ui.isBeatCountPickerActive(activeSlot)) {
                 // Close beat picker and return to chord list
-                ui.confirmBeatCount(0);
-                ui.openChordList(0, ui.getSelectedChordSlot(0));
+                ui.confirmBeatCount(activeSlot);
+                ui.openChordList(activeSlot, ui.getSelectedChordSlot(activeSlot));
                 return;  // Handled - stay in SCRIPT_SELECT
-            } else if (ui.isChordListActive(0)) {
+            } else if (ui.isChordListActive(activeSlot)) {
                 // Close chord list and return to main chord sequencer view
-                ui.selectFromChordList(0);  // Returns to main view
+                ui.selectFromChordList(activeSlot);  // Returns to main view
                 return;  // Handled - stay in SCRIPT_SELECT
             }
         }
@@ -743,7 +741,20 @@ void handleScriptLibraryState() {
     
     // Handle OK button - load selected script
     if (input.isButtonPressed(BTN_OK)) {
-        int slot = 0;  // Always use slot 0 (only slot available)
+        // Find first available empty script slot
+        int slot = -1;
+        for (int i = 0; i < MAX_SCRIPTS; i++) {
+            if (!scriptManager.isScriptRunning(i)) {
+                slot = i;
+                break;
+            }
+        }
+        
+        if (slot < 0) {
+            Serial.println("ERROR: No available script slots");
+            return;
+        }
+        
         int libraryIndex = ui.getSelectedMenuItem();
         
         Serial.print("Loading script ");
@@ -776,6 +787,7 @@ void handleScriptLibraryState() {
             
             // Go back to script select screen
             changeState(AppState::SCRIPT_SELECT);
+            ui.setSelectedScriptSlot(slot);  // Show the newly loaded script
             ui.resetMenuTracking();
             ui.showScriptSelectScreen();
         } else {
