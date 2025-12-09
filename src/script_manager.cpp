@@ -641,3 +641,46 @@ void ScriptManager::setChordSequencerEnergy(uint8_t slot, float energy) {
     chordSequencerInstances[slot]->setEnergy(energy);
 }
 
+// Per-chord parameter access
+void ScriptManager::setChordSequencerChordInversion(uint8_t slot, uint8_t chordSlot, uint8_t inversion) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return;
+    }
+    chordSequencerInstances[slot]->setChordInversion(chordSlot, inversion);
+}
+
+uint8_t ScriptManager::getChordSequencerChordInversion(uint8_t slot, uint8_t chordSlot) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return 255;
+    }
+    return chordSequencerInstances[slot]->getChordInversion(chordSlot);
+}
+
+void ScriptManager::setChordSequencerChordSpread(uint8_t slot, uint8_t chordSlot, float spread) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return;
+    }
+    chordSequencerInstances[slot]->setChordSpread(chordSlot, spread);
+}
+
+float ScriptManager::getChordSequencerChordSpread(uint8_t slot, uint8_t chordSlot) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return -1.0f;
+    }
+    return chordSequencerInstances[slot]->getChordSpread(chordSlot);
+}
+
+void ScriptManager::setChordSequencerChordTheoryMode(uint8_t slot, uint8_t chordSlot, uint8_t mode) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return;
+    }
+    chordSequencerInstances[slot]->setChordTheoryMode(chordSlot, mode);
+}
+
+uint8_t ScriptManager::getChordSequencerChordTheoryMode(uint8_t slot, uint8_t chordSlot) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return 255;
+    }
+    return chordSequencerInstances[slot]->getChordTheoryMode(chordSlot);
+}
+

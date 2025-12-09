@@ -48,6 +48,11 @@ struct GlobalParameters {
 struct Chord {
     uint8_t rootNote;      // 0-11 (C=0, C#=1, D=2, etc.)
     ChordType type;        // Major or Minor
+    
+    // Per-chord override parameters (use special values for "auto"/null)
+    uint8_t localInversion;      // 0-2 for inversion level, 255 = auto (use global)
+    float localSpread;           // 0.0-1.0 for spread, -1.0 = auto (use global)
+    uint8_t localTheoryMode;     // TheoryMode enum value, 255 = auto (use global)
 };
 
 // Scale note structure (for passing to Poliquencer)
@@ -76,6 +81,28 @@ public:
     void getChord(uint8_t slot, uint8_t* rootNote, ChordType* type);
     void setChordBeats(uint8_t slot, uint8_t beats);  // Set beats for individual chord
     uint8_t getChordBeats(uint8_t slot) const;
+    
+    // Per-chord parameter accessors
+    void setChordInversion(uint8_t slot, uint8_t inversion) { 
+        if (slot < MAX_CHORD_SLOTS) chords[slot].localInversion = inversion; 
+    }
+    uint8_t getChordInversion(uint8_t slot) const { 
+        return (slot < MAX_CHORD_SLOTS) ? chords[slot].localInversion : 255; 
+    }
+    
+    void setChordSpread(uint8_t slot, float spread) { 
+        if (slot < MAX_CHORD_SLOTS) chords[slot].localSpread = constrain(spread, -1.0f, 1.0f); 
+    }
+    float getChordSpread(uint8_t slot) const { 
+        return (slot < MAX_CHORD_SLOTS) ? chords[slot].localSpread : -1.0f; 
+    }
+    
+    void setChordTheoryMode(uint8_t slot, uint8_t mode) { 
+        if (slot < MAX_CHORD_SLOTS) chords[slot].localTheoryMode = mode; 
+    }
+    uint8_t getChordTheoryMode(uint8_t slot) const { 
+        return (slot < MAX_CHORD_SLOTS) ? chords[slot].localTheoryMode : 255; 
+    }
     
     // Playback control
     void setTempo(float bpm);

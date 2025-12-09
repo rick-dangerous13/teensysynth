@@ -83,6 +83,9 @@ void setup() {
     scriptManager.begin();
     Serial.println("ScriptManager OK");
     
+    // Set scriptManager pointer in UI for per-chord parameter access
+    ui.setScriptManager(&scriptManager);
+    
     // Start with welcome screen
     welcomeStartTime = millis();
     Serial.println("\n=== Polyphonion Ready ===");
@@ -368,7 +371,14 @@ void handleScriptSelectState() {
                 uint8_t chordCount;
                 if (scriptManager.getChordSequencerData(0, chordRoots, chordTypes, chordBeats, &currentChordSlot, &beatCounter, &chordCount)) {
                     if (ui.isBeatCountPickerActive(0)) {
-                        ui.navigateBeatCountPicker(0, scrollDelta);
+                        // Navigation through 4 chord parameters
+                        if (ui.isEditingChordParam(0)) {
+                            // In edit mode - adjust current parameter value
+                            ui.adjustChordParam(0, scrollDelta);
+                        } else {
+                            // Navigate through the 4 parameters
+                            ui.navigateBeatCountPicker(0, scrollDelta);
+                        }
                     } else if (ui.isChordListActive(0)) {
                         ui.navigateChordList(0, scrollDelta);
                     } else if (ui.isEditingGlobalParam(0)) {
@@ -459,15 +469,12 @@ void handleScriptSelectState() {
         uint8_t chordCount;
         if (scriptManager.getChordSequencerData(0, chordRoots, chordTypes, chordBeats, &currentChordSlot, &beatCounter, &chordCount)) {
             if (ui.isBeatCountPickerActive(0)) {
-                // Confirm beat count, close picker, and sync to script manager
-                uint8_t beatCount = ui.confirmBeatCount(0);
-                uint8_t targetSlot = ui.getChordListTarget(0);
-                if (targetSlot < MAX_CHORD_SLOTS) {
-                    scriptManager.setChordSequencerChordBeats(0, targetSlot, beatCount);
-                    
-                    // Move cursor to the newly added/modified chord
-                    ui.setSelectedChordSlot(0, targetSlot);
-                    ui.setSelectedGlobalParam(0, 255);  // Deselect global params
+                if (ui.isEditingChordParam(0)) {
+                    // Currently editing - save and exit edit mode
+                    ui.exitChordParamEdit(0, true);
+                } else {
+                    // Not editing - enter edit mode for the selected parameter
+                    ui.enterChordParamEdit(0);
                 }
             } else if (ui.isChordListActive(0)) {
                 uint8_t appliedSlot = ui.selectFromChordList(0);
@@ -770,6 +777,10 @@ void handleScriptRunningState() {
         if (ui.isEditingGlobalParam(0)) {
             // Cancel global param editing without saving
             ui.exitGlobalParamEdit(0, false);
+        } else if (ui.isEditingChordParam(0)) {
+            // Exit chord param editing without saving and close beat count picker
+            ui.exitChordParamEdit(0, false);
+            ui.confirmBeatCount(0);  // Close picker
         } else if (ui.isBeatCountPickerActive(0)) {
             // Close beat picker without saving
             ui.confirmBeatCount(0);  // This closes the picker

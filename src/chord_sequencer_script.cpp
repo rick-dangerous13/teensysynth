@@ -34,10 +34,10 @@ ChordSequencerScript::ChordSequencerScript()
     globals.energy = 0.5f;
 
     // Seed default chord shapes but start with zero active chords
-    chords[0] = {9, CHORD_MINOR};   // A minor (Am)
-    chords[1] = {2, CHORD_MINOR};   // D minor (Dm)
-    chords[2] = {5, CHORD_MAJOR};   // F major (Fmaj)
-    chords[3] = {7, CHORD_MINOR};   // G minor (Gm)
+    chords[0] = {9, CHORD_MINOR, 255, -1.0f, 255};   // A minor (Am) with auto overrides
+    chords[1] = {2, CHORD_MINOR, 255, -1.0f, 255};   // D minor (Dm) with auto overrides
+    chords[2] = {5, CHORD_MAJOR, 255, -1.0f, 255};   // F major (Fmaj) with auto overrides
+    chords[3] = {7, CHORD_MINOR, 255, -1.0f, 255};   // G minor (Gm) with auto overrides
 
     chordBeats[0] = 16;
     chordBeats[1] = 8;
@@ -45,7 +45,7 @@ ChordSequencerScript::ChordSequencerScript()
     chordBeats[3] = 8;
 
     for (uint8_t i = 4; i < MAX_CHORD_SLOTS; i++) {
-        chords[i] = {0, CHORD_MAJOR};
+        chords[i] = {0, CHORD_MAJOR, 255, -1.0f, 255};  // Auto overrides
         chordBeats[i] = 8;
     }
 }

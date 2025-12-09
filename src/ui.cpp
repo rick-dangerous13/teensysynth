@@ -22,7 +22,7 @@ static void toLowercase(char* dest, const char* src, size_t maxLen) {
     dest[i] = '\0';
 }
 
-UI::UI() : display(nullptr), clockTempo(DEFAULT_CLOCK_BPM), multitaskingMode(false), menuSelection(0), lastMenuSelection(-1), menuItemCount(0), scrollOffset(0), selectedScriptSlot(0) {
+UI::UI() : display(nullptr), scriptManager(nullptr), clockTempo(DEFAULT_CLOCK_BPM), multitaskingMode(false), menuSelection(0), lastMenuSelection(-1), menuItemCount(0), scrollOffset(0), selectedScriptSlot(0) {
     // Initialize button strip tracking
     for (int i = 0; i < 4; i++) {
         lastButtonLabels[i][0] = '\0';
@@ -2409,16 +2409,62 @@ void UI::openBeatCountPicker(uint8_t slot, uint8_t initialBeats) {
     if (initialBeats > 32) initialBeats = 32;
     scriptSlots[slot].beatCountSelection = initialBeats;
     scriptSlots[slot].lastBeatCountSelection = 255; // Force first draw
+    
+    // Load current per-chord parameters from the selected chord
+    uint8_t selectedChordSlot = scriptSlots[slot].selectedChordSlot;
+    uint8_t chordCount = scriptSlots[slot].chordCount;
+    if (selectedChordSlot >= chordCount && chordCount > 0) selectedChordSlot = chordCount - 1;
+    
+    // Initialize selected parameter to beat count, editing off
+    scriptSlots[slot].selectedChordParam = 0;  // Start with beat count
+    scriptSlots[slot].editingChordParam = false;
+    scriptSlots[slot].lastSelectedChordParam = 255;  // Force first draw
+    scriptSlots[slot].lastEditingChordParam = false;
+    
+    // Sync current chord parameters from script
+    syncChordParamsFromScript(slot, selectedChordSlot);
+}
+
+void UI::syncChordParamsFromScript(uint8_t slot, uint8_t chordSlot) {
+    if (slot >= MAX_SCRIPTS || !scriptManager) return;
+    
+    // Get per-chord parameters from script manager (which queries the ChordSequencerScript)
+    // This is called when opening the Beat Count Picker to load current values
+    uint8_t inversion = scriptManager->getChordSequencerChordInversion(slot, chordSlot);
+    float spread = scriptManager->getChordSequencerChordSpread(slot, chordSlot);
+    uint8_t theoryMode = scriptManager->getChordSequencerChordTheoryMode(slot, chordSlot);
+    
+    scriptSlots[slot].chordInversion = inversion;
+    scriptSlots[slot].chordSpread = spread;
+    scriptSlots[slot].chordTheoryMode = theoryMode;
+    scriptSlots[slot].lastChordInversion = 255;  // Force redraw
+    scriptSlots[slot].lastChordSpread = -999.0f;  // Force redraw
+    scriptSlots[slot].lastChordTheoryMode = 255;  // Force redraw
 }
 
 void UI::navigateBeatCountPicker(uint8_t slot, int8_t delta) {
     if (slot >= MAX_SCRIPTS) return;
     if (!scriptSlots[slot].beatCountPickerActive) return;
     
-    int16_t newCount = (int16_t)scriptSlots[slot].beatCountSelection + delta;
-    if (newCount < 1) newCount = 32;  // Wrap around
-    if (newCount > 32) newCount = 1;
-    scriptSlots[slot].beatCountSelection = (uint8_t)newCount;
+    // Cyclic navigation through 4 parameters: beat count -> inversion -> spread -> theory
+    uint8_t currentSelection = scriptSlots[slot].selectedChordParam;
+    int16_t newSelection = (int16_t)currentSelection + delta;
+    if (newSelection < 0) newSelection = 3;
+    if (newSelection > 3) newSelection = 0;
+    scriptSlots[slot].selectedChordParam = (uint8_t)newSelection;
+}
+
+void UI::finalizeBeatCountPicker(uint8_t slot) {
+    if (slot >= MAX_SCRIPTS) return;
+    if (!scriptSlots[slot].beatCountPickerActive) return;
+    
+    // Save any pending changes if still editing
+    if (scriptSlots[slot].editingChordParam) {
+        exitChordParamEdit(slot, true);  // Save changes and exit edit mode
+    }
+    
+    // Close the beat count picker overlay
+    scriptSlots[slot].beatCountPickerActive = false;
 }
 
 uint8_t UI::confirmBeatCount(uint8_t slot) {
@@ -2451,8 +2497,6 @@ void UI::drawBeatCountPickerOverlay(uint8_t slot, int16_t x, int16_t y, int16_t 
     
     bool active = scriptSlots[slot].beatCountPickerActive;
     bool wasActive = scriptSlots[slot].lastBeatCountPickerActive;
-    uint8_t selectedCount = scriptSlots[slot].beatCountSelection;
-    uint8_t lastSelectedCount = scriptSlots[slot].lastBeatCountSelection;
     
     // If overlay just closed, force base UI redraw next frame (do not clear here or we wipe the base)
     if (!active && wasActive) {
@@ -2468,38 +2512,145 @@ void UI::drawBeatCountPickerOverlay(uint8_t slot, int16_t x, int16_t y, int16_t 
     if (!active) return;
     
     // Overlay geometry
-    int16_t overlayX = x + 20;
-    int16_t overlayW = w - 40;
-    int16_t overlayY = y + 30;
-    int16_t overlayH = h - 60;
+    int16_t overlayX = x + 15;
+    int16_t overlayW = w - 30;
+    int16_t overlayY = y + 25;
+    int16_t overlayH = h - 50;
     
     bool firstDraw = !wasActive;
     
+    // Layout: 4 boxes in a row (beat count, inversion, spread, theory)
+    const char* labels[] = {"beats", "invert", "spread", "theory"};
+    int16_t boxW = (overlayW - 15) / 4;  // 4 boxes with 5px gaps
+    int16_t boxH = 50;
+    int16_t boxGap = 5;
+    int16_t boxY = overlayY + 30;
+    
+    // Get current and previous chord parameters for comparison
+    uint8_t selectedChordSlot = scriptSlots[slot].selectedChordSlot;
+    uint8_t chordCount = scriptSlots[slot].chordCount;
+    if (selectedChordSlot >= chordCount) selectedChordSlot = chordCount - 1;  // Safety
+    
+    // Draw title
     if (firstDraw) {
         display->fillRect(overlayX, overlayY, overlayW, overlayH, 0x1082);
         display->drawRect(overlayX, overlayY, overlayW, overlayH, COLOR_ACCENT);
-        display->drawText(overlayX + 10, overlayY + 5, "steps per chord", COLOR_DIM, FONT_SMALL);
+        display->drawText(overlayX + 10, overlayY + 5, "chord parameters", COLOR_DIM, FONT_SMALL);
     }
     
-    // Draw big beat count in the center
-    char beatStr[4];
-    snprintf(beatStr, sizeof(beatStr), "%d", selectedCount);
+    // Values to display
+    // When editing beat count, show the beatCountSelection; otherwise show the saved value
+    uint8_t beatCount;
+    if (scriptSlots[slot].editingChordParam && scriptSlots[slot].selectedChordParam == 0) {
+        beatCount = scriptSlots[slot].beatCountSelection;  // Show value being edited
+    } else {
+        beatCount = scriptSlots[slot].chordBeats[selectedChordSlot];  // Show saved value
+    }
+    uint8_t inversion = scriptSlots[slot].chordInversion;
+    float spread = scriptSlots[slot].chordSpread;
+    uint8_t theoryMode = scriptSlots[slot].chordTheoryMode;
     
-    int16_t bx, by; uint16_t bw, bh;
-    display->getTextBounds(beatStr, 0, 0, &bx, &by, &bw, &bh, FONT_LARGE);
-    int16_t textX = overlayX + (overlayW - bw) / 2 - bx;
-    int16_t textY = overlayY + (overlayH / 2 - 20);
+    // Theory mode names for display
+    static const char* theoryModeNames[] = {"func", "diat", "moda", "chro", "all"};
     
-    // Clear and redraw number if changed or on first draw
-    if (selectedCount != lastSelectedCount || firstDraw) {
-        display->fillRect(overlayX + 5, overlayY + 25, overlayW - 10, 60, 0x1082);
-        display->drawText(textX, textY, beatStr, COLOR_ACCENT, FONT_LARGE);
-        scriptSlots[slot].lastBeatCountSelection = selectedCount;
+    // Draw 4 parameter boxes
+    for (int i = 0; i < 4; i++) {
+        int16_t boxX = overlayX + 8 + i * (boxW + boxGap);
+        bool isSelected = (scriptSlots[slot].selectedChordParam == i);
+        bool isEditing = isSelected && scriptSlots[slot].editingChordParam;
+        
+        // Determine colors
+        uint16_t boxColor;
+        uint16_t textColor;
+        if (isEditing) {
+            boxColor = COLOR_HIGHLIGHT;  // Yellow
+            textColor = COLOR_BG;
+        } else if (isSelected) {
+            boxColor = COLOR_ACCENT;  // Cyan
+            textColor = COLOR_BG;
+        } else {
+            boxColor = 0x0820;  // Dark gray
+            textColor = COLOR_FG;
+        }
+        
+        // Check what changed
+        bool needsRedraw = firstDraw || isSelected != (scriptSlots[slot].lastSelectedChordParam == i) ||
+                          isEditing != (scriptSlots[slot].lastEditingChordParam && scriptSlots[slot].lastSelectedChordParam == i);
+        
+        // Also check if parameter values changed
+        if (i == 0) {
+            // For beat count, compare the current displayed value with last
+            uint8_t lastBeatCount;
+            if (scriptSlots[slot].lastEditingChordParam && scriptSlots[slot].lastSelectedChordParam == 0) {
+                lastBeatCount = scriptSlots[slot].lastBeatCountSelection;
+            } else {
+                lastBeatCount = scriptSlots[slot].chordBeats[selectedChordSlot];
+            }
+            if (beatCount != lastBeatCount) needsRedraw = true;
+        }
+        if (i == 1 && inversion != scriptSlots[slot].lastChordInversion) needsRedraw = true;
+        if (i == 2 && fabs(spread - scriptSlots[slot].lastChordSpread) > 0.001f) needsRedraw = true;
+        if (i == 3 && theoryMode != scriptSlots[slot].lastChordTheoryMode) needsRedraw = true;
+        
+        if (!needsRedraw) continue;
+        
+        // Draw box
+        display->fillRoundRect(boxX, boxY, boxW, boxH, 4, boxColor);
+        
+        // Draw label
+        display->drawText(boxX + 4, boxY + 5, labels[i], textColor, FONT_SMALL);
+        
+        // Draw value
+        char valueStr[12];
+        if (i == 0) {  // Beat count
+            snprintf(valueStr, sizeof(valueStr), "%d", beatCount);
+        } else if (i == 1) {  // Inversion
+            if (inversion == 255) {
+                snprintf(valueStr, sizeof(valueStr), "auto");
+            } else {
+                snprintf(valueStr, sizeof(valueStr), "%d", inversion);
+            }
+        } else if (i == 2) {  // Spread
+            if (spread < -0.5f) {
+                snprintf(valueStr, sizeof(valueStr), "auto");
+            } else {
+                snprintf(valueStr, sizeof(valueStr), "%.2f", spread);
+            }
+        } else {  // Theory mode
+            if (theoryMode == 255) {
+                snprintf(valueStr, sizeof(valueStr), "auto");
+            } else if (theoryMode < 5) {
+                snprintf(valueStr, sizeof(valueStr), "%s", theoryModeNames[theoryMode]);
+            } else {
+                snprintf(valueStr, sizeof(valueStr), "???");
+            }
+        }
+        
+        int16_t bx, by; uint16_t bw, bh;
+        display->getTextBounds(valueStr, 0, 0, &bx, &by, &bw, &bh, FONT_SMALL);
+        int16_t valueX = boxX + (boxW - bw) / 2 - bx;
+        int16_t valueY = boxY + 30;
+        display->drawText(valueX, valueY, valueStr, textColor, FONT_SMALL);
     }
     
-    // Draw navigation hint
-    display->drawText(overlayX + 10, overlayY + overlayH - 20, "turn to adjust, OK to confirm", COLOR_DIM, FONT_SMALL);
-
+    // Draw navigation hint and "Done" button
+    display->drawText(overlayX + 10, overlayY + overlayH - 20, "turn: select, OK: edit", COLOR_DIM, FONT_SMALL);
+    
+    // Draw "Done" button in bottom right
+    int16_t doneButtonX = overlayX + overlayW - 60;
+    int16_t doneButtonY = overlayY + overlayH - 20;
+    int16_t doneButtonW = 50;
+    int16_t doneButtonH = 15;
+    display->fillRoundRect(doneButtonX, doneButtonY, doneButtonW, doneButtonH, 3, COLOR_ACCENT);
+    display->drawText(doneButtonX + 8, doneButtonY + 3, "done", COLOR_BG, FONT_SMALL);
+    
+    // Update last values
+    scriptSlots[slot].lastBeatCountSelection = beatCount;
+    scriptSlots[slot].lastSelectedChordParam = scriptSlots[slot].selectedChordParam;
+    scriptSlots[slot].lastEditingChordParam = scriptSlots[slot].editingChordParam;
+    scriptSlots[slot].lastChordInversion = inversion;
+    scriptSlots[slot].lastChordSpread = spread;
+    scriptSlots[slot].lastChordTheoryMode = theoryMode;
     scriptSlots[slot].lastBeatCountPickerActive = active;
 }
 
@@ -2581,8 +2732,115 @@ void UI::drawChordCarousel(uint8_t slot) {
 }
 
 // ============================================================================
+// Per-Chord Parameter Methods
+// ============================================================================
+
+void UI::enterChordParamEdit(uint8_t slot) {
+    if (slot >= MAX_SCRIPTS) return;
+    scriptSlots[slot].editingChordParam = true;
+}
+
+void UI::exitChordParamEdit(uint8_t slot, bool save) {
+    if (slot >= MAX_SCRIPTS) return;
+    
+    if (save) {
+        // Save changes to script
+        uint8_t selectedChordSlot = scriptSlots[slot].selectedChordSlot;
+        uint8_t chordCount = scriptSlots[slot].chordCount;
+        if (selectedChordSlot >= chordCount && chordCount > 0) selectedChordSlot = chordCount - 1;
+        
+        uint8_t param = scriptSlots[slot].selectedChordParam;
+        
+        if (!scriptManager) return;  // Safety check
+        
+        switch (param) {
+            case 0: // Beat count
+                scriptManager->setChordSequencerChordBeats(slot, selectedChordSlot, scriptSlots[slot].beatCountSelection);
+                break;
+            case 1: // Inversion
+                scriptManager->setChordSequencerChordInversion(slot, selectedChordSlot, scriptSlots[slot].chordInversion);
+                break;
+            case 2: // Spread
+                scriptManager->setChordSequencerChordSpread(slot, selectedChordSlot, scriptSlots[slot].chordSpread);
+                break;
+            case 3: // Theory Mode
+                scriptManager->setChordSequencerChordTheoryMode(slot, selectedChordSlot, scriptSlots[slot].chordTheoryMode);
+                break;
+        }
+    }
+    
+    scriptSlots[slot].editingChordParam = false;
+    scriptSlots[slot].chordParamEditJustExited = true;  // Flag that we just exited
+}
+
+void UI::adjustChordParam(uint8_t slot, int8_t delta) {
+    if (slot >= MAX_SCRIPTS || !scriptSlots[slot].editingChordParam) return;
+    
+    uint8_t param = scriptSlots[slot].selectedChordParam;
+    
+    switch (param) {
+        case 0: // Beat count
+            {
+                int16_t newBeats = (int16_t)scriptSlots[slot].beatCountSelection + delta;
+                if (newBeats < 1) newBeats = 32;
+                if (newBeats > 32) newBeats = 1;
+                scriptSlots[slot].beatCountSelection = (uint8_t)newBeats;
+            }
+            break;
+            
+        case 1: // Inversion
+            {
+                int16_t newInversion = (int16_t)scriptSlots[slot].chordInversion + delta;
+                if (newInversion < 0) newInversion = 255;  // Cycle to auto
+                if (newInversion > 255) newInversion = 0;  // Cycle from auto to 0
+                if (newInversion == 255) {
+                    scriptSlots[slot].chordInversion = 255;  // Auto
+                } else if (newInversion > 2) {
+                    newInversion = 2;  // Max 3 inversions (0, 1, 2)
+                    scriptSlots[slot].chordInversion = (uint8_t)newInversion;
+                } else {
+                    scriptSlots[slot].chordInversion = (uint8_t)newInversion;
+                }
+            }
+            break;
+            
+        case 2: // Spread (0.0-1.0, or -1.0 for auto)
+            {
+                float newSpread = scriptSlots[slot].chordSpread + (delta * 0.1f);
+                // Cycle: auto (-1.0) -> 0.0 -> 1.0 -> auto
+                if (newSpread < -0.95f) {
+                    // Currently in auto range, moving negative wraps to max
+                    newSpread = 1.0f;
+                } else if (newSpread > 1.05f) {
+                    // Past max, wrap to auto
+                    newSpread = -1.0f;
+                }
+                scriptSlots[slot].chordSpread = constrain(newSpread, -1.0f, 1.0f);
+            }
+            break;
+            
+        case 3: // Theory Mode
+            {
+                int16_t newMode = (int16_t)scriptSlots[slot].chordTheoryMode + delta;
+                if (newMode < 0) newMode = 255;  // Cycle to auto
+                if (newMode > 255) newMode = 0;  // Cycle from auto to 0
+                if (newMode == 255) {
+                    scriptSlots[slot].chordTheoryMode = 255;  // Auto
+                } else if (newMode > 4) {
+                    newMode = 4;
+                    scriptSlots[slot].chordTheoryMode = (uint8_t)newMode;
+                } else {
+                    scriptSlots[slot].chordTheoryMode = (uint8_t)newMode;
+                }
+            }
+            break;
+    }
+}
+
+// ============================================================================
 // Global Parameter Methods
 // ============================================================================
+
 
 void UI::enterGlobalParamEdit(uint8_t slot) {
     if (slot >= MAX_SCRIPTS) return;

@@ -99,6 +99,20 @@ struct ScriptSlot {
     uint8_t lastBeatCountSelection;
     bool lastBeatCountPickerActive;
     
+    // Per-chord parameters (ChordSequencer Beat Count Picker)
+    uint8_t selectedChordParam;      // 0=beat count, 1=inversion, 2=spread, 3=theory; 255=none
+    bool editingChordParam;          // true when editing a per-chord param
+    uint8_t chordInversion;          // 0-2, 255=auto (use global)
+    float chordSpread;               // 0.0-1.0, -1.0=auto (use global)
+    uint8_t chordTheoryMode;         // 0-4, 255=auto (use global)
+    bool chordParamEditJustExited;   // true if we just exited edit mode
+    // Previous state for change detection
+    uint8_t lastSelectedChordParam;
+    bool lastEditingChordParam;
+    uint8_t lastChordInversion;
+    float lastChordSpread;
+    uint8_t lastChordTheoryMode;
+    
     // Global parameters (ChordSequencer)
     uint8_t selectedGlobalParam;     // 0-3: Key, Theory, Compactness, Energy; 255=none
     bool editingGlobalParam;         // true when editing a global param value
@@ -120,6 +134,7 @@ public:
     UI();
     
     void begin(Display* display);
+    void setScriptManager(ScriptManager* mgr) { scriptManager = mgr; }
     
     // Screen rendering
     void showWelcomeScreen();
@@ -237,6 +252,7 @@ public:
     void openBeatCountPicker(uint8_t slot, uint8_t initialBeats);
     void navigateBeatCountPicker(uint8_t slot, int8_t delta);
     uint8_t confirmBeatCount(uint8_t slot);
+    void finalizeBeatCountPicker(uint8_t slot);
     void drawBeatCountPickerOverlay(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
     
     // Global parameters (ChordSequencer)
@@ -252,8 +268,21 @@ public:
     void adjustGlobalParam(uint8_t slot, int8_t delta);
     void syncGlobalsFromScript(uint8_t slot, const GlobalParameters& globals);
     
+    // Per-chord parameters (ChordSequencer Beat Count Picker)
+    uint8_t getSelectedChordParam(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].selectedChordParam : 255; }
+    void setSelectedChordParam(uint8_t slot, uint8_t param) { if (slot < MAX_SCRIPTS) scriptSlots[slot].selectedChordParam = param; }
+    bool isEditingChordParam(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].editingChordParam : false; }
+    uint8_t getChordInversion(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].chordInversion : 255; }
+    float getChordSpread(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].chordSpread : -1.0f; }
+    uint8_t getChordTheoryMode(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].chordTheoryMode : 255; }
+    void enterChordParamEdit(uint8_t slot);
+    void exitChordParamEdit(uint8_t slot, bool save);
+    void adjustChordParam(uint8_t slot, int8_t delta);
+    void syncChordParamsFromScript(uint8_t slot, uint8_t chordSlot);
+    
 private:
     Display* display;
+    ScriptManager* scriptManager;  // Pointer to script manager for per-chord parameter access
     
     // Global settings
     float clockTempo;

@@ -103,6 +103,14 @@ public:
     void setPoliquencerStepGateMode(uint8_t slot, uint8_t step, uint8_t gateMode);
     void setPoliquencerDirection(uint8_t slot, uint8_t direction);
     
+    // ChordSequencer per-chord parameter access
+    void setChordSequencerChordInversion(uint8_t slot, uint8_t chordSlot, uint8_t inversion);
+    uint8_t getChordSequencerChordInversion(uint8_t slot, uint8_t chordSlot);
+    void setChordSequencerChordSpread(uint8_t slot, uint8_t chordSlot, float spread);
+    float getChordSequencerChordSpread(uint8_t slot, uint8_t chordSlot);
+    void setChordSequencerChordTheoryMode(uint8_t slot, uint8_t chordSlot, uint8_t mode);
+    uint8_t getChordSequencerChordTheoryMode(uint8_t slot, uint8_t chordSlot);
+    
     // DAC access (for testing)
     Adafruit_MCP4725* getDAC1() { return &dac1; }
     Adafruit_MCP4725* getDAC2() { return &dac2; }
