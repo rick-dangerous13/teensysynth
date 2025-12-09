@@ -272,14 +272,14 @@ void InputHandler::updateTouch() {
 }
 
 int16_t InputHandler::mapTouchX(int16_t rawX) {
-    // Map raw touch X to screen X (0-320) based on rotation
-    // Rotation 3 (landscape, USB right): map to width
+    // Map raw touch X to screen X (0-SCREEN_WIDTH) based on rotation
+    // Rotation 1 (landscape, USB right): map to width
     return map(rawX, TS_MINX, TS_MAXX, 0, SCREEN_WIDTH);
 }
 
 int16_t InputHandler::mapTouchY(int16_t rawY) {
-    // Map raw touch Y to screen Y (0-240) based on rotation
-    // Rotation 3 (landscape, USB right): map to height
+    // Map raw touch Y to screen Y (0-SCREEN_HEIGHT) based on rotation
+    // Rotation 1 (landscape, USB right): map to height
     return map(rawY, TS_MINY, TS_MAXY, 0, SCREEN_HEIGHT);
 }
 

@@ -94,8 +94,8 @@ UI::UI() : display(nullptr), scriptManager(nullptr), clockTempo(DEFAULT_CLOCK_BP
         scriptSlots[i].globalRoot = 0;  // C
         scriptSlots[i].globalDegree = 0;  // Major
         scriptSlots[i].globalTheoryMode = 0;  // Functional
-        scriptSlots[i].globalVoiceLeading = 0.5f;
-        scriptSlots[i].globalEnergy = 0.5f;
+        scriptSlots[i].globalVoiceLeading = 1.0f;  // 100% compact (smooth voice leading)
+        scriptSlots[i].globalEnergy = 0.5f;  // 50% energy
         scriptSlots[i].globalParamNeedsRedraw = true;  // Force initial draw
         scriptSlots[i].lastSelectedGlobalParam = 255;
         scriptSlots[i].lastEditingGlobalParam = false;
@@ -154,8 +154,9 @@ void UI::showWelcomeScreen() {
     // Large centered title
     display->drawTextCentered(70, "POLYPHONION", COLOR_FG, FONT_LARGE);
     
-    // Decorative line
-    display->drawLine(80, 110, 240, 110, COLOR_ACCENT);
+    // Decorative line (centered with margin)
+    int16_t lineMargin = SCREEN_WIDTH / 6;
+    display->drawLine(lineMargin, 110, SCREEN_WIDTH - lineMargin, 110, COLOR_ACCENT);
     
     // Subtitle
     display->drawTextCentered(130, "eurorack synthesizer", COLOR_DIM, FONT_MEDIUM);
@@ -295,24 +296,43 @@ void UI::showScriptRunningScreen() {
     
     display->clear();
     
-    // Draw 4-quadrant view for running scripts
-    display->drawQuadrantDividers();
+    // Draw full-screen script view (stretched to fit new display)
+    // Show each script in a horizontal strip layout
     
     for (uint8_t i = 0; i < MAX_SCRIPTS; i++) {
-        display->setClipRegion(i);
+        // Each script gets a strip: y = i * (SCREEN_HEIGHT / 4)
+        int16_t y = i * (SCREEN_HEIGHT / MAX_SCRIPTS);
+        int16_t height = (SCREEN_HEIGHT / MAX_SCRIPTS) - 5;
         
-        // Draw script header
-        int16_t x = (i % 2) * (SCREEN_WIDTH / 2) + 5;
-        int16_t y = (i / 2) * (SCREEN_HEIGHT / 2) + 5;
+        // Draw script number and status indicator
+        char slot_label[16];
+        snprintf(slot_label, sizeof(slot_label), "SLOT %d:", i + 1);
+        display->drawText(10, y + 5, slot_label, COLOR_DIM, FONT_SMALL);
         
         if (scriptSlots[i].active) {
-            display->drawText(x, y, scriptSlots[i].name, COLOR_ACCENT, FONT_SMALL);
+            // Active indicator
+            display->fillCircle(SCREEN_WIDTH - 15, y + 12, 5, COLOR_ACCENT);
+            
+            // Script name
+            display->drawText(10, y + 20, scriptSlots[i].name, COLOR_FG, FONT_MEDIUM);
+            
+            // Script info line (type, parameters, etc.)
+            char info_str[64];
+            snprintf(info_str, sizeof(info_str), "Type: %d | Phase: %.1f%%", 
+                     scriptSlots[i].scriptType, scriptSlots[i].phase * 100.0f);
+            display->drawText(10, y + 35, info_str, COLOR_DIM, FONT_SMALL);
         } else {
-            display->drawText(x, y, "empty", COLOR_DIM, FONT_SMALL);
+            display->drawText(10, y + 20, "- empty -", COLOR_DIM, FONT_MEDIUM);
+        }
+        
+        // Draw separator line
+        if (i < MAX_SCRIPTS - 1) {
+            display->drawLine(0, y + height, SCREEN_WIDTH, y + height, COLOR_DIM);
         }
     }
     
-    display->clearClipRegion();
+    // Draw button strip at bottom
+    drawButtonStrip("back", "edit", "", "");
 }
 
 void UI::showSettingsScreen() {
@@ -523,7 +543,7 @@ void UI::drawScriptSlot(uint8_t slot, bool selected) {
         x = 0;
         y = 0;
         w = SCREEN_WIDTH;
-        h = 225;  // Leave room for button strip at y=225
+        h = SCREEN_HEIGHT - 15;  // Leave room for button strip at bottom
     }
     
     // No selection border - clean interface
@@ -807,11 +827,13 @@ void UI::drawGlobalParameterBoxes(uint8_t slot, int16_t x, int16_t y, int16_t w,
     
     // Layout: 5 boxes in a row below the chord progression
     // Position them below the dots area
-    int16_t boxY = y + h - 35;  // Near bottom of slot
-    int16_t boxH = 28;
-    int16_t boxW = 58;  // Narrower to fit 5 boxes
-    int16_t boxGap = 4;
-    int16_t boxStartX = x + 10;
+    int16_t padding = 12;
+    int16_t boxGap = 10;
+    int16_t boxH = 36;
+    int16_t boxY = y + h - boxH - 12;  // Leave padding above footer/strip
+    int16_t boxW = (w - (padding * 2) - (boxGap * 4)) / 5;
+    if (boxW < 50) boxW = 50;
+    int16_t boxStartX = x + padding;
     
     // Box data: label, value string
     const char* labels[] = {"root", "degree", "theory", "compact", "energy"};
@@ -870,11 +892,11 @@ void UI::drawGlobalParameterBoxes(uint8_t slot, int16_t x, int16_t y, int16_t w,
         display->fillRoundRect(boxX, boxY, boxW, boxH, 4, boxColor);
         
         // Draw label (top)
-        int16_t labelY = boxY + 6;
+        int16_t labelY = boxY + 8;
         display->drawText(boxX + 3, labelY, labels[i], textColor, FONT_SMALL);
         
         // Draw value (bottom, centered)
-        int16_t valueY = boxY + 18;
+        int16_t valueY = boxY + boxH - 14;
         int16_t bx, by; uint16_t bw, bh;
         display->getTextBounds(values[i], 0, 0, &bx, &by, &bw, &bh, FONT_SMALL);
         int16_t valueX = boxX + (boxW - bw) / 2 - bx;
@@ -957,15 +979,19 @@ void UI::drawChordSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16
     }
     if (totalBeats == 0) totalBeats = 1;  // Avoid division by zero
     
-    // Layout: Fixed progression width (260px), then + box (20px)
-    int16_t progressionW = 260;  // Fixed width for step progression
-    int16_t plusBoxW = 20;
-    int16_t gapBetween = 6;
-    int16_t startX = x + 10;  // Left padding
+    // Layout: scale to available width
+    int16_t padding = 12;
+    int16_t plusBoxW = 28;
+    int16_t gapBetween = 8;
+    int16_t progressionW = w - (padding * 2 + plusBoxW + gapBetween);
+    if (progressionW < 120) progressionW = 120;  // Avoid too small
+    int16_t startX = x + padding;
     int16_t plusBoxX = startX + progressionW + gapBetween;
     
     // Vertical positioning: center the progression in available height
-    int16_t chartH = 40;  // Height of chord boxes
+    int16_t chartH = h - 70;  // Use most of the available height
+    if (chartH > 70) chartH = 70;  // Cap for aesthetics
+    if (chartH < 36) chartH = 36;
     int16_t chartY = y + (h - chartH) / 2;
     
     // Step calculations
@@ -1260,7 +1286,8 @@ void UI::drawButtonStrip(const char* btn1, const char* btn2, const char* btn3, c
     // Text centered in each box, always lowercase
     // Design: Minimal, clean, no borders - just text labels
     
-    const int16_t stripY = 225;
+    // Pin strip to bottom of screen
+    const int16_t stripY = SCREEN_HEIGHT - 15;
     const int16_t stripH = 15;
     const int16_t boxW = SCREEN_WIDTH / 4;  // 80px each
     
@@ -1754,17 +1781,18 @@ void UI::drawPoliquencerSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w,
     
     bool firstDraw = (scriptSlots[slot].lastSeqCurrentStep == 255);
     
-    // Layout (condensed for button strip):
-    // - Top area: Levers (pitch control)
-    // - Middle: Toggle switches (gate mode)
-    // - Bottom: Hand cranks (duration/ratchets) - condensed
+    // Layout: sliders at top, switches and wheels at bottom with minimal spacing
+    int16_t switchH = 22;
+    int16_t crankH = 55;
+    int16_t spacing = 3;
     
+    // Position switches and cranks at bottom, working upward
+    int16_t crankY = y + h - crankH - 3;  // 3px from bottom
+    int16_t switchY = crankY - switchH - spacing;
+    
+    // Calculate lever area to fill remaining space above switches
     int16_t leverY = y;
-    int16_t leverH = 100;  // Reduced from 115
-    int16_t switchY = leverY + leverH + 3;  // Reduced spacing
-    int16_t switchH = 25;  // Reduced from 30
-    int16_t crankY = switchY + switchH + 3;  // Reduced spacing
-    int16_t crankH = h - (crankY - y);
+    int16_t leverH = switchY - leverY;  // Fill space from top to switches
     
     uint8_t currentStep = scriptSlots[slot].seqCurrentStep;
     uint8_t editStep = scriptSlots[slot].seqEditStep;
@@ -2414,32 +2442,29 @@ void UI::drawChordListOverlay(uint8_t slot, int16_t x, int16_t y, int16_t w, int
         display->drawText(overlayX + 6, overlayY + 4, title, COLOR_DIM, FONT_SMALL);
     }
 
-    // Grid layout: 3 columns x 4 rows (12 chords visible)
-    const uint8_t cols = 3;
+    // Grid layout: 2 columns x 4 rows (8 chords visible)
+    const uint8_t cols = 2;
     const uint8_t rows = 4;
-    int16_t cellGap = 4;
+    int16_t cellGap = 8;
     int16_t cellW = (overlayW - (cols + 1) * cellGap) / cols;
-    int16_t cellH = 26;
+    int16_t cellH = 60;  // Increased from 40 (50% larger)
     int16_t startY = overlayY + 18;
     
     // Determine which chord list to use
     bool useRanked = scriptSlots[slot].rankedChordsValid && scriptSlots[slot].rankedChordCount > 0;
     uint8_t displayCount = useRanked ? scriptSlots[slot].rankedChordCount : 12;
-    if (displayCount > 12) displayCount = 12;  // Show only 12 at a time
+    if (displayCount > 8) displayCount = 8;  // Show only top 8 chords
 
     auto drawCell = [&](uint8_t displayIdx, bool selected) {
         // Get chord from ranked or static list
         uint8_t chordRoot, chordType;
-        float score = 0.0f;
         
         if (useRanked && displayIdx < scriptSlots[slot].rankedChordCount) {
             chordRoot = scriptSlots[slot].rankedChords[displayIdx].rootNote;
             chordType = scriptSlots[slot].rankedChords[displayIdx].type;
-            score = scriptSlots[slot].rankedChords[displayIdx].totalScore;
         } else if (!useRanked && displayIdx < 12) {
             chordRoot = chordLibrary[displayIdx].root;
             chordType = chordLibrary[displayIdx].type;
-            score = 0.5f;  // Neutral score for static list
         } else {
             return;  // Out of range
         }
@@ -2449,27 +2474,15 @@ void UI::drawChordListOverlay(uint8_t slot, int16_t x, int16_t y, int16_t w, int
         int16_t cellX = overlayX + cellGap + col * (cellW + cellGap);
         int16_t cellY = startY + row * (cellH + cellGap);
         
-        // Color based on selection and ranking score
+        // Color based on selection only (no score-based highlighting)
         uint16_t bg;
         uint16_t textColor;
         
         if (selected) {
             bg = COLOR_ACCENT;        // Cyan for selected
             textColor = COLOR_BG;
-        } else if (useRanked) {
-            // Visual de-emphasis based on score
-            if (score >= 0.8f) {
-                bg = 0x2945;  // Brighter gray for top-ranked
-                textColor = COLOR_FG;
-            } else if (score >= 0.6f) {
-                bg = 0x1082;  // Medium gray for mid-ranked
-                textColor = COLOR_DIM;
-            } else {
-                bg = 0x0841;  // Darker gray for low-ranked
-                textColor = 0x39E7;  // Dimmer text
-            }
         } else {
-            bg = 0x1082;        // Standard gray for static list
+            bg = 0x1082;              // Standard gray for unselected
             textColor = COLOR_FG;
         }
         
@@ -2478,10 +2491,10 @@ void UI::drawChordListOverlay(uint8_t slot, int16_t x, int16_t y, int16_t w, int
         char label[8];
         snprintf(label, sizeof(label), "%s %s", noteNames[chordRoot], typeNames[chordType]);
         int16_t bx, by; uint16_t bw, bh;
-        display->getTextBounds(label, 0, 0, &bx, &by, &bw, &bh, FONT_SMALL);
+        display->getTextBounds(label, 0, 0, &bx, &by, &bw, &bh, FONT_MEDIUM);  // Changed to FONT_MEDIUM
         int16_t textX = cellX + (cellW - bw) / 2 - bx;
         int16_t textY = cellY + (cellH - bh) / 2 - by;
-        display->drawText(textX, textY, label, textColor, FONT_SMALL);
+        display->drawText(textX, textY, label, textColor, FONT_MEDIUM);  // Changed to FONT_MEDIUM
     };
 
     if (firstDraw) {
@@ -2841,12 +2854,12 @@ void UI::drawChordCarousel(uint8_t slot) {
     uint8_t selectedIdx = scriptSlots[slot].carouselSelectedIdx;
     
     // Carousel dimensions (mimicking iOS album selector)
-    int16_t carouselCenterX = 160;  // Center of screen
-    int16_t carouselCenterY = 120;  // Center of screen
+    int16_t carouselCenterX = SCREEN_WIDTH / 2;  // Center of screen
+    int16_t carouselCenterY = SCREEN_HEIGHT / 2;  // Center of screen
     int16_t itemHeight = 40;
     
     // Draw semi-transparent overlay
-    display->fillRect(0, 0, 320, 240, 0x0000);  // Black overlay
+    display->fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0x0000);  // Black overlay
     
     // Draw carousel items: 2 above, center (selected), 2 below
     // Calculate visible indices (wrapping)

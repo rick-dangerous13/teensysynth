@@ -7,7 +7,7 @@
  * 
  * Hardware:
  * - Teensy 4.1
- * - ILI9341 2.8" TFT Display (320x240)
+ * - ILI9488 3.5" TFT Display (320x480)
  * - 2 buttons: OK (pin 2), Back (pin 3)
  * - Rotary encoder for scrolling (CLK: pin 4, DT: pin 5, SW: pin 6)
  * 
@@ -16,7 +16,6 @@
  */
 
 #include <Arduino.h>
-#include <ILI9341_t3.h>
 #include <SPI.h>
 #include "config.h"
 #include "display.h"
@@ -563,8 +562,21 @@ void handleScriptSelectState() {
         
         // Check if Poliquencer is running
         if (scriptManager.getPoliquencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam)) {
-            // Poliquencer layout with 3px margins: levers at top, switches middle, cranks bottom
-            // Updated: leverWidth = (320 - 6) / 8 - 2 = 37.25px per control
+            // Poliquencer layout: Calculate positions dynamically based on screen size
+            // Slot 0 content area: y=40 (title margin), h=140 (SCREEN_HEIGHT/2 - title)
+            int16_t slotContentY = 40;
+            int16_t slotContentH = (SCREEN_HEIGHT / 2) - 20;
+            int16_t leverH = 160;
+            int16_t switchH = 22;
+            int16_t crankH = 55;
+            int16_t spacing = 3;
+            
+            // Calculate Y positions matching ui.cpp layout
+            int16_t leverY = slotContentY;
+            int16_t crankY = slotContentY + slotContentH - crankH - 3;
+            int16_t switchY = crankY - switchH - spacing;
+            int16_t leverEndY = switchY;  // Levers end where switches begin
+            
             int16_t controlWidth = 37;
             int16_t startX = 3;  // 3px left margin
             
@@ -573,9 +585,8 @@ void handleScriptSelectState() {
                 uint8_t step = (touchX - startX) / controlWidth;
                 if (step > 7) step = 7;
                 
-                // Actual layout: leverY=30, leverH=115 (30-145), switchY=150, switchH=30 (150-180), crankY=185 (185-240)
                 // Determine which control type based on Y position
-                if (touchY >= 30 && touchY < 145) {
+                if (touchY >= leverY && touchY < leverEndY) {
                     // Levers area - touch upper half to increase, lower half to decrease
                     ui.setSequencerEditStep(0, step);
                     ui.setSequencerEditMode(0, 0);  // Lever mode
@@ -584,8 +595,8 @@ void handleScriptSelectState() {
                     scriptManager.getPoliquencerData(0, &dummy, &dummy, dummySteps, dummyDurations, dummyGateModes, &dummyDirection, &dummySteam);
                     int8_t currentValue = dummySteps[step];
                     
-                    // Calculate midpoint of lever area: 30 + 115/2 = 87
-                    int16_t leverMidY = 87;
+                    // Calculate midpoint of lever area
+                    int16_t leverMidY = leverY + (leverEndY - leverY) / 2;
                     
                     if (touchY < leverMidY) {
                         // Upper half - increase pitch
@@ -598,8 +609,8 @@ void handleScriptSelectState() {
                         if (newValue < -12) newValue = -12;  // Clamp to -12 semitones
                         scriptManager.setPoliquencerStepValue(0, step, newValue);
                     }
-                } else if (touchY >= 145 && touchY < 185) {
-                    // Switches area (expanded: actual is 150-180, we expand to 145-185 for easier touch)
+                } else if (touchY >= switchY && touchY < crankY) {
+                    // Switches area
                     ui.setSequencerEditStep(0, step);
                     ui.setSequencerEditMode(0, 1);  // Switch mode
                     // Toggle switch cycles: down(1)→center(2)→up(0)→center(2)→down(1)→center(2)...
@@ -627,7 +638,7 @@ void handleScriptSelectState() {
                     }
                     
                     scriptManager.setPoliquencerStepGateMode(0, step, newMode);
-                } else if (touchY >= 185 && touchY < 240) {
+                } else if (touchY >= crankY && touchY < (slotContentY + slotContentH)) {
                     // Cranks area (wheel + number) - increment duration on any touch
                     ui.setSequencerEditStep(0, step);
                     ui.setSequencerEditMode(0, 2);  // Crank mode
@@ -691,27 +702,34 @@ void handleScriptSelectState() {
         ui.showScriptLibraryScreen(&scriptManager);
     }
     
-    // Handle Back button - go back to where we came from
+    // Handle Back button - first check for chord sequencer overlays
     if (input.isButtonPressed(BTN_BACK)) {
-        AppState destination = previousState;
-        currentState = destination;
-        // When going back to script library, set previous to main menu for next back press
-        if (destination == AppState::SCRIPT_LIBRARY) {
-            previousState = AppState::MAIN_MENU;
-        } else if (destination == AppState::SETTINGS) {
-            previousState = AppState::MAIN_MENU;
+        // If a script is running in slot 0, check for overlays
+        if (scriptManager.isScriptRunning(0)) {
+            if (ui.isEditingGlobalParam(0)) {
+                // Cancel global param editing without saving
+                ui.exitGlobalParamEdit(0, false);
+                return;  // Handled - stay in SCRIPT_SELECT
+            } else if (ui.isEditingChordParam(0)) {
+                // Exit chord param editing without saving, return to beat count picker
+                ui.exitChordParamEdit(0, false);
+                return;  // Handled - stay in SCRIPT_SELECT
+            } else if (ui.isBeatCountPickerActive(0)) {
+                // Close beat picker and return to chord list
+                ui.confirmBeatCount(0);
+                ui.openChordList(0, ui.getSelectedChordSlot(0));
+                return;  // Handled - stay in SCRIPT_SELECT
+            } else if (ui.isChordListActive(0)) {
+                // Close chord list and return to main chord sequencer view
+                ui.selectFromChordList(0);  // Returns to main view
+                return;  // Handled - stay in SCRIPT_SELECT
+            }
         }
-        ui.resetMenuTracking();
         
-        // Show appropriate screen based on where we're going
-        if (destination == AppState::MAIN_MENU) {
-            ui.showMainMenu();
-        } else if (destination == AppState::SETTINGS) {
-            ui.showSettingsScreen();
-        } else if (destination == AppState::SCRIPT_LIBRARY) {
-            ui.setMenuItemCount(scriptManager.getScriptLibraryCount());
-            ui.showScriptLibraryScreen(&scriptManager);
-        }
+        // No overlay active, or no script running - go to main menu
+        changeState(AppState::MAIN_MENU);
+        ui.resetMenuTracking();
+        ui.showMainMenu();
     }
 }
 
@@ -782,33 +800,31 @@ void handleScriptRunningState() {
         }
     }
     
-    // Handle Back button for ChordSequencer
-    if (input.isButtonPressed(BTN_BACK) && scriptManager.isScriptRunning(0)) {
-        // Check for chord sequencer overlays or edit mode
-        if (ui.isEditingGlobalParam(0)) {
-            // Cancel global param editing without saving
-            ui.exitGlobalParamEdit(0, false);
-        } else if (ui.isEditingChordParam(0)) {
-            // Exit chord param editing without saving and close beat count picker
-            ui.exitChordParamEdit(0, false);
-            ui.confirmBeatCount(0);  // Close picker
-        } else if (ui.isBeatCountPickerActive(0)) {
-            // Close beat picker without saving
-            ui.confirmBeatCount(0);  // This closes the picker
-        } else if (ui.isChordListActive(0)) {
-            // Close chord list without selecting
-            ui.selectFromChordList(0);  // Returns to main view
-        } else {
-            // No overlay active - go back to main menu
-            currentState = AppState::MAIN_MENU;
-            ui.resetMenuTracking();
-            ui.showMainMenu();
-        }
-        return;  // Handled
-    }
-    
-    // Handle Back button - always go back to main menu
+    // Handle Back button - prioritize overlays, then exit script
     if (input.isButtonPressed(BTN_BACK)) {
+        if (scriptManager.isScriptRunning(0)) {
+            // Check for chord sequencer overlays or edit mode
+            if (ui.isEditingGlobalParam(0)) {
+                // Cancel global param editing without saving
+                ui.exitGlobalParamEdit(0, false);
+                return;  // Handled - stay in SCRIPT_RUNNING
+            } else if (ui.isEditingChordParam(0)) {
+                // Exit chord param editing without saving, return to beat count picker
+                ui.exitChordParamEdit(0, false);
+                return;  // Handled - stay in SCRIPT_RUNNING
+            } else if (ui.isBeatCountPickerActive(0)) {
+                // Close beat picker and return to chord list
+                ui.confirmBeatCount(0);
+                ui.openChordList(0, ui.getSelectedChordSlot(0));
+                return;  // Handled - stay in SCRIPT_RUNNING
+            } else if (ui.isChordListActive(0)) {
+                // Close chord list and return to main chord sequencer view
+                ui.selectFromChordList(0);  // Returns to main view
+                return;  // Handled - stay in SCRIPT_RUNNING
+            }
+        }
+        
+        // No chord sequencer overlay active OR script not running - exit to main menu
         currentState = AppState::MAIN_MENU;
         ui.resetMenuTracking();  // Reset for new screen
         ui.showMainMenu();

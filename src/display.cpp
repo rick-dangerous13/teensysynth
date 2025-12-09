@@ -1,21 +1,210 @@
 /**
- * Display Driver Implementation
+ * Display Driver Implementation for ILI9488
  * 
- * ILI9341 display driver with Norns-style graphics
+ * Uses TFT_eSPI library for reliable display control
+ * Custom bitmap font for text rendering
  */
 
 #include "display.h"
 #include <string.h>
 
+// Create global TFT object
+TFT_eSPI tft = TFT_eSPI();
+
+// Simple 5x7 bitmap font (ASCII 32-126)
+// Each character is 5 pixels wide, 7 pixels tall
+// Packed as bytes
+const uint8_t fontData[] PROGMEM = {
+    // Space (32)
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // ! (33)
+    0x04, 0x04, 0x04, 0x04, 0x00, 0x04, 0x00,
+    // " (34)
+    0x0A, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // # (35)
+    0x0A, 0x1F, 0x0A, 0x1F, 0x0A, 0x00, 0x00,
+    // $ (36)
+    0x04, 0x0E, 0x14, 0x0E, 0x05, 0x0E, 0x04,
+    // % (37)
+    0x18, 0x19, 0x02, 0x04, 0x08, 0x13, 0x03,
+    // & (38)
+    0x0C, 0x12, 0x12, 0x0C, 0x12, 0x12, 0x0D,
+    // ' (39)
+    0x04, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // ( (40)
+    0x02, 0x04, 0x08, 0x08, 0x08, 0x04, 0x02,
+    // ) (41)
+    0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08,
+    // * (42)
+    0x00, 0x04, 0x15, 0x0E, 0x15, 0x04, 0x00,
+    // + (43)
+    0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00,
+    // , (44)
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x08,
+    // - (45)
+    0x00, 0x00, 0x00, 0x0F, 0x00, 0x00, 0x00,
+    // . (46)
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00,
+    // / (47)
+    0x01, 0x02, 0x04, 0x08, 0x10, 0x10, 0x00,
+    // 0-9 (48-57)
+    0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E,  // 0
+    0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E,  // 1
+    0x0E, 0x11, 0x01, 0x0E, 0x10, 0x10, 0x1F,  // 2
+    0x1F, 0x01, 0x02, 0x0E, 0x01, 0x11, 0x0E,  // 3
+    0x08, 0x0C, 0x0A, 0x09, 0x1F, 0x08, 0x08,  // 4
+    0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E,  // 5
+    0x0E, 0x10, 0x10, 0x1E, 0x11, 0x11, 0x0E,  // 6
+    0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08,  // 7
+    0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E,  // 8
+    0x0E, 0x11, 0x11, 0x0F, 0x01, 0x01, 0x0E,  // 9
+    // : (58)
+    0x00, 0x04, 0x00, 0x04, 0x00, 0x00, 0x00,
+    // ; (59)
+    0x00, 0x04, 0x00, 0x04, 0x00, 0x04, 0x08,
+    // < (60)
+    0x02, 0x04, 0x08, 0x10, 0x08, 0x04, 0x02,
+    // = (61)
+    0x00, 0x00, 0x1F, 0x00, 0x1F, 0x00, 0x00,
+    // > (62)
+    0x08, 0x04, 0x02, 0x01, 0x02, 0x04, 0x08,
+    // ? (63)
+    0x0E, 0x11, 0x01, 0x02, 0x04, 0x00, 0x04,
+    // @ (64)
+    0x0E, 0x11, 0x1F, 0x15, 0x15, 0x10, 0x0F,
+    // A-Z (65-90)
+    0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11,  // A
+    0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E,  // B
+    0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E,  // C
+    0x1C, 0x12, 0x11, 0x11, 0x11, 0x12, 0x1C,  // D
+    0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F,  // E
+    0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10,  // F
+    0x0F, 0x10, 0x10, 0x13, 0x11, 0x11, 0x0F,  // G
+    0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11,  // H
+    0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E,  // I
+    0x07, 0x02, 0x02, 0x02, 0x02, 0x12, 0x0C,  // J
+    0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11,  // K
+    0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F,  // L
+    0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11,  // M
+    0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11,  // N
+    0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E,  // O
+    0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10,  // P
+    0x0E, 0x11, 0x11, 0x11, 0x13, 0x12, 0x0D,  // Q
+    0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11,  // R
+    0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E,  // S
+    0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04,  // T
+    0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E,  // U
+    0x11, 0x11, 0x11, 0x11, 0x0A, 0x0A, 0x04,  // V
+    0x11, 0x11, 0x15, 0x15, 0x15, 0x1B, 0x11,  // W
+    0x11, 0x0A, 0x0A, 0x04, 0x0A, 0x0A, 0x11,  // X
+    0x11, 0x0A, 0x0A, 0x04, 0x04, 0x04, 0x04,  // Y
+    0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F,  // Z
+    // [ (91)
+    0x0E, 0x08, 0x08, 0x08, 0x08, 0x08, 0x0E,
+    // \ (92)
+    0x10, 0x10, 0x08, 0x04, 0x02, 0x01, 0x01,
+    // ] (93)
+    0x0E, 0x02, 0x02, 0x02, 0x02, 0x02, 0x0E,
+    // ^ (94)
+    0x04, 0x0A, 0x11, 0x00, 0x00, 0x00, 0x00,
+    // _ (95)
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1F,
+    // ` (96)
+    0x08, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // a-z (97-122)
+    0x00, 0x0E, 0x01, 0x0F, 0x11, 0x0F, 0x00,  // a
+    0x10, 0x10, 0x1E, 0x11, 0x11, 0x1E, 0x00,  // b
+    0x00, 0x0E, 0x10, 0x10, 0x10, 0x0E, 0x00,  // c
+    0x01, 0x01, 0x0F, 0x11, 0x11, 0x0F, 0x00,  // d
+    0x00, 0x0E, 0x11, 0x1F, 0x10, 0x0E, 0x00,  // e
+    0x06, 0x08, 0x0C, 0x08, 0x08, 0x08, 0x00,  // f
+    0x00, 0x0F, 0x11, 0x11, 0x0F, 0x01, 0x0E,  // g
+    0x10, 0x10, 0x1E, 0x11, 0x11, 0x11, 0x00,  // h
+    0x04, 0x00, 0x0C, 0x04, 0x04, 0x0E, 0x00,  // i
+    0x02, 0x00, 0x06, 0x02, 0x02, 0x12, 0x0C,  // j
+    0x10, 0x10, 0x11, 0x12, 0x1C, 0x12, 0x11,  // k
+    0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E, 0x00,  // l
+    0x00, 0x1A, 0x15, 0x15, 0x15, 0x11, 0x00,  // m
+    0x00, 0x1E, 0x11, 0x11, 0x11, 0x11, 0x00,  // n
+    0x00, 0x0E, 0x11, 0x11, 0x11, 0x0E, 0x00,  // o
+    0x00, 0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10,  // p
+    0x00, 0x0F, 0x11, 0x11, 0x0F, 0x01, 0x01,  // q
+    0x00, 0x1E, 0x11, 0x10, 0x10, 0x10, 0x00,  // r
+    0x00, 0x0E, 0x10, 0x0E, 0x01, 0x0E, 0x00,  // s
+    0x08, 0x0C, 0x08, 0x08, 0x08, 0x06, 0x00,  // t
+    0x00, 0x11, 0x11, 0x11, 0x11, 0x0F, 0x00,  // u
+    0x00, 0x11, 0x11, 0x0A, 0x0A, 0x04, 0x00,  // v
+    0x00, 0x11, 0x15, 0x15, 0x15, 0x0A, 0x00,  // w
+    0x00, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x00,  // x
+    0x00, 0x11, 0x11, 0x0F, 0x01, 0x0E, 0x00,  // y
+    0x00, 0x1F, 0x02, 0x04, 0x08, 0x1F, 0x00,  // z
+    // { (123)
+    0x02, 0x04, 0x04, 0x08, 0x04, 0x04, 0x02,
+    // | (124)
+    0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04,
+    // } (125)
+    0x08, 0x04, 0x04, 0x02, 0x04, 0x04, 0x08,
+    // ~ (126)
+    0x09, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+void drawChar(int16_t x, int16_t y, char c, uint16_t color, uint8_t size) {
+    if (c < 32 || c > 126) return;  // Only printable ASCII
+    
+    int charIndex = (c - 32) * 7;
+    
+    for (int row = 0; row < 7; row++) {
+        uint8_t bits = pgm_read_byte(&fontData[charIndex + row]);
+        for (int col = 0; col < 5; col++) {
+            if (bits & (1 << (4 - col))) {
+                tft.fillRect(x + col * size, y + row * size, size, size, color);
+            }
+        }
+    }
+}
+
 Display::Display() 
-    : tft(TFT_CS, TFT_DC, TFT_RST, TFT_MOSI, TFT_SCLK, TFT_MISO),
-      clipX(0), clipY(0), clipW(SCREEN_WIDTH), clipH(SCREEN_HEIGHT),
+    : clipX(0), clipY(0), clipW(SCREEN_WIDTH), clipH(SCREEN_HEIGHT),
       clippingEnabled(false) {
 }
 
+void Display::spiWrite8(uint8_t c) {
+    tft.writecommand(c);
+}
+
+void Display::spiWrite16(uint16_t c) {
+    tft.writedata(c);
+}
+
+void Display::writeCommand(uint8_t cmd) {
+    tft.writecommand(cmd);
+}
+
+void Display::writeData(uint8_t data) {
+    tft.writedata(data);
+}
+
+void Display::writeData16(uint16_t data) {
+    tft.writedata(data);
+}
+
+void Display::setAddrWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
+    tft.setAddrWindow(x0, y0, x1, y1);
+}
+
+void Display::pushColor(uint16_t color) {
+    tft.pushColor(color);
+}
+
 void Display::begin() {
-    tft.begin();
-    tft.setRotation(3);  // Landscape mode (flipped)
+    tft.init();
+    // Use landscape rotation; SCREEN_WIDTH/HEIGHT set to 480x320
+    tft.setRotation(1);
+
+    // Rely on TFT_eSPI's full ILI9488 init; avoid extra VCOM tweaks.
+    // Some panels ship inverted; enable inversion to achieve black background.
+    tft.invertDisplay(true);
+
     clear();
 }
 
@@ -24,26 +213,13 @@ void Display::clear() {
 }
 
 void Display::update() {
-    // ILI9341_t3 doesn't need explicit update - writes are immediate
-    // This method is here for potential double-buffering in the future
-}
-
-void Display::drawText(int16_t x, int16_t y, const char* text, uint16_t color, uint8_t size) {
-    tft.setTextColor(color);
-    tft.setTextSize(size);
-    tft.setCursor(x, y);
-    tft.print(text);
-}
-
-void Display::drawTextCentered(int16_t y, const char* text, uint16_t color, uint8_t size) {
-    // Calculate text width manually (ILI9341_t3 uses 6x8 font)
-    int16_t charWidth = 6 * size;
-    int16_t textWidth = strlen(text) * charWidth;
-    int16_t x = (SCREEN_WIDTH - textWidth) / 2;
-    drawText(x, y, text, color, size);
+    // Immediate update
 }
 
 void Display::drawPixel(int16_t x, int16_t y, uint16_t color) {
+    if (clippingEnabled) {
+        if (x < clipX || x >= clipX + clipW || y < clipY || y >= clipY + clipH) return;
+    }
     tft.drawPixel(x, y, color);
 }
 
@@ -52,15 +228,14 @@ void Display::drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t colo
 }
 
 void Display::fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color) {
+    if (clippingEnabled) {
+        if (x < clipX) { w -= clipX - x; x = clipX; }
+        if (y < clipY) { h -= clipY - y; y = clipY; }
+        if (x + w > clipX + clipW) w = clipX + clipW - x;
+        if (y + h > clipY + clipH) h = clipY + clipH - y;
+        if (w <= 0 || h <= 0) return;
+    }
     tft.fillRect(x, y, w, h, color);
-}
-
-void Display::drawRoundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, uint16_t color) {
-    tft.drawRoundRect(x, y, w, h, r, color);
-}
-
-void Display::fillRoundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, uint16_t color) {
-    tft.fillRoundRect(x, y, w, h, r, color);
 }
 
 void Display::drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color) {
@@ -75,41 +250,55 @@ void Display::fillCircle(int16_t x, int16_t y, int16_t r, uint16_t color) {
     tft.fillCircle(x, y, r, color);
 }
 
+void Display::drawRoundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, uint16_t color) {
+    tft.drawRoundRect(x, y, w, h, r, color);
+}
+
+void Display::fillRoundRect(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, uint16_t color) {
+    tft.fillRoundRect(x, y, w, h, r, color);
+}
+
+void Display::drawText(int16_t x, int16_t y, const char* text, uint16_t color, uint8_t size) {
+    // Draw text using custom bitmap font
+    int xPos = x;
+    while (*text) {
+        drawChar(xPos, y, *text, color, size);
+        xPos += 6 * size;  // Character width
+        text++;
+    }
+}
+
+void Display::drawTextCentered(int16_t y, const char* text, uint16_t color, uint8_t size) {
+    int16_t charWidth = 6 * size;
+    int16_t textWidth = strlen(text) * charWidth;
+    int16_t x = (SCREEN_WIDTH - textWidth) / 2;
+    drawText(x, y, text, color, size);
+}
+
 void Display::drawMenuBox(int16_t x, int16_t y, int16_t w, int16_t h, bool selected) {
     if (selected) {
-        // Filled box with inverted colors for selection
-        fillRect(x, y, w, h, COLOR_FG);
+        fillRect(x, y, w, h, COLOR_HIGHLIGHT);
     } else {
-        // Outlined box
-        drawRect(x, y, w, h, COLOR_DIM);
+        drawRect(x, y, w, h, COLOR_FG);
     }
 }
 
 void Display::drawProgressBar(int16_t x, int16_t y, int16_t w, int16_t h, float progress) {
-    // Clamp progress to 0-1
-    if (progress < 0.0f) progress = 0.0f;
-    if (progress > 1.0f) progress = 1.0f;
-    
-    // Draw outline
     drawRect(x, y, w, h, COLOR_FG);
-    
-    // Draw filled portion
-    int16_t fillW = (int16_t)((w - 2) * progress);
+    int16_t fillW = (int16_t)(w * progress);
     if (fillW > 0) {
-        fillRect(x + 1, y + 1, fillW, h - 2, COLOR_ACCENT);
+        fillRect(x + 1, y + 1, fillW - 2, h - 2, COLOR_ACCENT);
     }
 }
 
 void Display::drawWaveform(int16_t x, int16_t y, int16_t w, int16_t h, const int16_t* data, int16_t len) {
-    if (len < 2 || data == nullptr) return;
-    
-    int16_t centerY = y + h / 2;
+    if (!data || len < 2) return;
     
     for (int16_t i = 0; i < len - 1; i++) {
-        int16_t x0 = x + (i * w) / (len - 1);
-        int16_t x1 = x + ((i + 1) * w) / (len - 1);
-        int16_t y0 = centerY - (data[i] * h) / (2 * 32768);
-        int16_t y1 = centerY - (data[i + 1] * h) / (2 * 32768);
+        int16_t x0 = x + (i * w) / len;
+        int16_t x1 = x + ((i + 1) * w) / len;
+        int16_t y0 = y + h / 2 - (data[i] * h) / 32768;
+        int16_t y1 = y + h / 2 - (data[i + 1] * h) / 32768;
         drawLine(x0, y0, x1, y1, COLOR_ACCENT);
     }
 }
@@ -117,47 +306,48 @@ void Display::drawWaveform(int16_t x, int16_t y, int16_t w, int16_t h, const int
 void Display::drawScrollIndicator(int16_t y, int16_t totalItems, int16_t visibleItems, int16_t currentItem) {
     if (totalItems <= visibleItems) return;
     
-    int16_t scrollbarH = SCREEN_HEIGHT - 2 * MARGIN;
-    int16_t thumbH = (scrollbarH * visibleItems) / totalItems;
-    if (thumbH < 10) thumbH = 10;
-    
-    int16_t thumbY = y + (scrollbarH - thumbH) * currentItem / (totalItems - 1);
-    
-    // Draw track
-    drawLine(SCREEN_WIDTH - 5, y, SCREEN_WIDTH - 5, y + scrollbarH, COLOR_DIM);
-    
-    // Draw thumb
-    fillRect(SCREEN_WIDTH - 7, thumbY, 5, thumbH, COLOR_FG);
+    int16_t indicatorHeight = (visibleItems * 100) / totalItems;
+    int16_t indicatorY = (currentItem * 100) / totalItems;
+    fillRect(SCREEN_WIDTH - 4, y + indicatorY, 4, indicatorHeight, COLOR_ACCENT);
+}
+
+void Display::getTextBounds(const char* text, int16_t x, int16_t y, int16_t* x1, int16_t* y1, uint16_t* w, uint16_t* h, uint8_t size) {
+    *x1 = x;
+    *y1 = y;
+    *w = strlen(text) * 6 * size;
+    *h = 7 * size;
 }
 
 void Display::drawQuadrantDividers() {
-    // Draw cross dividing screen into 4 quadrants
-    drawLine(SCREEN_WIDTH / 2, 0, SCREEN_WIDTH / 2, SCREEN_HEIGHT, COLOR_DIM);
-    drawLine(0, SCREEN_HEIGHT / 2, SCREEN_WIDTH, SCREEN_HEIGHT / 2, COLOR_DIM);
+    int16_t midX = SCREEN_WIDTH / 2;
+    int16_t midY = SCREEN_HEIGHT / 2;
+    drawLine(midX, 0, midX, SCREEN_HEIGHT, COLOR_DIM);
+    drawLine(0, midY, SCREEN_WIDTH, midY, COLOR_DIM);
 }
 
 void Display::setClipRegion(uint8_t quadrant) {
     clippingEnabled = true;
-    
-    int16_t halfW = SCREEN_WIDTH / 2;
-    int16_t halfH = SCREEN_HEIGHT / 2;
+    int16_t midX = SCREEN_WIDTH / 2;
+    int16_t midY = SCREEN_HEIGHT / 2;
     
     switch (quadrant) {
-        case 0: // Top-left
+        case 0:
             clipX = 0; clipY = 0;
+            clipW = midX; clipH = midY;
             break;
-        case 1: // Top-right
-            clipX = halfW; clipY = 0;
+        case 1:
+            clipX = midX; clipY = 0;
+            clipW = midX; clipH = midY;
             break;
-        case 2: // Bottom-left
-            clipX = 0; clipY = halfH;
+        case 2:
+            clipX = 0; clipY = midY;
+            clipW = midX; clipH = midY;
             break;
-        case 3: // Bottom-right
-            clipX = halfW; clipY = halfH;
+        case 3:
+            clipX = midX; clipY = midY;
+            clipW = midX; clipH = midY;
             break;
     }
-    clipW = halfW;
-    clipH = halfH;
 }
 
 void Display::clearClipRegion() {
@@ -166,12 +356,4 @@ void Display::clearClipRegion() {
     clipY = 0;
     clipW = SCREEN_WIDTH;
     clipH = SCREEN_HEIGHT;
-}
-
-void Display::getTextBounds(const char* text, int16_t x, int16_t y, int16_t* x1, int16_t* y1, uint16_t* w, uint16_t* h, uint8_t size) {
-    // Manual text bounds calculation for ILI9341_t3 (uses 6x8 font)
-    *x1 = x;
-    *y1 = y;
-    *w = strlen(text) * 6 * size;
-    *h = 8 * size;
 }

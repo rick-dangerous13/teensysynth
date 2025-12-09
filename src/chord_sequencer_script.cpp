@@ -31,8 +31,8 @@ ChordSequencerScript::ChordSequencerScript()
     globals.root = MKEY_C;
     globals.degree = DEGREE_MAJOR;
     globals.theoryMode = THEORY_FUNCTIONAL;
-    globals.voiceLeadingCompactness = 0.5f;
-    globals.energy = 0.5f;
+    globals.voiceLeadingCompactness = 1.0f;  // 100% compact (smooth voice leading)
+    globals.energy = 0.5f;  // 50% energy (circle of fifths)
 
     // Seed default chord shapes but start with zero active chords
     chords[0] = {9, CHORD_MINOR, 255, -1.0f, 255};   // A minor (Am) with auto overrides

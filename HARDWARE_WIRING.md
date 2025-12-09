@@ -25,9 +25,9 @@ Both DACs share **SDA (Pin 18)** and **SCL (Pin 19)** — the I2C protocol autom
 | 4 | Encoder | CLK | DEBO encoder |
 | 5 | Encoder | DT | DEBO encoder |
 | 6 | Encoder | SW | Switch (also acts as OK) |
-| 8 | Display | TFT_RST | ILI9341 Reset |
-| 9 | Display | TFT_DC | ILI9341 Data/Command |
-| 10 | Display | TFT_CS | ILI9341 Chip Select |
+| 8 | Display | TFT_RST | ILI9488 Reset |
+| 9 | Display | TFT_DC | ILI9488 Data/Command |
+| 10 | Display | TFT_CS | ILI9488 Chip Select |
 | 11 | Display | TFT_MOSI | SPI Data |
 | 12 | Display | TFT_MISO | SPI Data |
 | 13 | Display | TFT_SCLK | SPI Clock |
@@ -40,27 +40,28 @@ Both DACs share **SDA (Pin 18)** and **SCL (Pin 19)** — the I2C protocol autom
 
 ## Component Wiring Details
 
-### 1. ILI9341 2.8" TFT Display with XPT2046 Touch
+### 1. ILI9488 3.5" TFT Display (Capacitive Touch - Not Connected)
 ```
 Display Pin    Teensy 4.1    Notes
 -----------    ----------    -----
-VCC     →      3.3V          Display power
+VDD     →      3.3V          Display power
 GND     →      GND           Ground
 CS      →      Pin 10        Display chip select
-RESET   →      Pin 8         Display reset
-DC      →      Pin 9         Display data/command
-SDI/MOSI→      Pin 11        SPI data (shared with touch)
-SCK     →      Pin 13        SPI clock (shared with touch)
-LED     →      3.3V          Backlight power
-SDO/MISO→      Pin 12        SPI data (shared with touch)
-T_CLK   →      Pin 13        Touch clock (shared with display)
-T_CS    →      Pin 7         Touch chip select
-T_DIN   →      Pin 11        Touch data in (shared with display MOSI)
-T_DO    →      Pin 12        Touch data out (shared with display MISO)
-T_IRQ   →      Not connected Touch uses polling mode
+RST     →      Pin 8         Display reset
+D/C     →      Pin 9         Display data/command
+SDI     →      Pin 11        SPI MOSI data
+SCK     →      Pin 13        SPI clock
+BL      →      3.3V          Backlight power
+SDO     →      Pin 12        SPI MISO data
+NC/3V3  →      Not connected
+CTP_SDA →      Not connected Capacitive touch (not in use)
+CTP_SCL →      Not connected Capacitive touch (not in use)
+CTP_INT →      Not connected Capacitive touch (not in use)
+CTP_RST →      Not connected Capacitive touch (not in use)
 ```
 
-**Note:** The touch controller (XPT2046) shares the SPI bus with the display but has its own chip select (Pin 7).
+**Resolution:** 320 × 480 pixels (landscape orientation)
+**Note:** Capacitive touch functionality not yet implemented. Touch pins can be added later if needed.
 
 ### 2. DEBO Rotary Encoder
 ```

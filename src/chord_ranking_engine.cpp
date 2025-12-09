@@ -85,9 +85,53 @@ bool ChordRankingEngine::isScaleTone(uint8_t note, uint8_t root, ScaleDegree deg
 }
 
 bool ChordRankingEngine::isDiatonicChord(uint8_t rootNote, ChordType type) const {
-    // A chord is diatonic if its root is in the scale
-    // For now, we only check the root (could be enhanced to check the full triad)
-    return isScaleTone(rootNote, scaleRoot, globals.degree);
+    // A chord is diatonic if:
+    // 1. Its root is in the scale AND
+    // 2. Its third (minor or major) matches the scale degree
+    
+    // First check: root must be a scale tone
+    if (!isScaleTone(rootNote, scaleRoot, globals.degree)) {
+        return false;
+    }
+    
+    // Second check: chord quality (major/minor) must match the diatonic expectation
+    // In major scale: I(maj), ii(min), iii(min), IV(maj), V(maj), vi(min), vii°(dim)
+    // In minor scale: i(min), ii°(dim), III(maj), iv(min), v(min), VI(maj), VII(maj)
+    
+    rootNote = rootNote % 12;
+    uint8_t root = scaleRoot % 12;
+    int8_t interval = (rootNote - root + 12) % 12;
+    
+    // For major scale (degree 0 = Ionian)
+    if (globals.degree == 0) {  // Major scale
+        switch (interval) {
+            case 0: return (type == CHORD_MAJOR);  // I = Major
+            case 2: return (type == CHORD_MINOR);  // ii = minor
+            case 4: return (type == CHORD_MINOR);  // iii = minor
+            case 5: return (type == CHORD_MAJOR);  // IV = Major
+            case 7: return (type == CHORD_MAJOR);  // V = Major
+            case 9: return (type == CHORD_MINOR);  // vi = minor
+            case 11: return false;  // vii = diminished (not supported)
+            default: return false;
+        }
+    }
+    
+    // For minor scale (degree 1 = Aeolian/Natural Minor)
+    if (globals.degree == 1) {  // Natural minor scale
+        switch (interval) {
+            case 0: return (type == CHORD_MINOR);  // i = minor
+            case 2: return false;  // ii° = diminished (not supported)
+            case 3: return (type == CHORD_MAJOR);  // III = Major
+            case 5: return (type == CHORD_MINOR);  // iv = minor
+            case 7: return (type == CHORD_MINOR);  // v = minor
+            case 8: return (type == CHORD_MAJOR);  // VI = Major
+            case 10: return (type == CHORD_MAJOR);  // VII = Major
+            default: return false;
+        }
+    }
+    
+    // For other modes, just check if root is in scale (less strict)
+    return true;
 }
 
 ChordRankingEngine::ChordFunction ChordRankingEngine::getChordFunction(uint8_t rootNote, 
@@ -214,8 +258,16 @@ float ChordRankingEngine::computeEnergyScore(uint8_t rootNote, ChordType type) c
             break;
     }
     
-    // Score based on how well chord tension matches target energy
-    score = 1.0f - fabs(chordTension - targetTension);
+    // If no current chord (first selection), favor tonic chords regardless of energy
+    // This prevents non-tonic chords from ranking higher just because the energy level doesn't match
+    if (currentChordRoot == 255) {
+        // For first chord: tonic gets bonus, everything else neutral
+        score = (func == FUNCTION_TONIC) ? 0.9f : 0.5f;
+    } else {
+        // For subsequent chords: score based on how well chord tension matches target energy
+        score = 1.0f - fabs(chordTension - targetTension);
+    }
+    
     return constrain(score, 0.0f, 1.0f);
 }
 

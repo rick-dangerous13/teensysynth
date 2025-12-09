@@ -1,14 +1,15 @@
 /**
- * Display Driver for ILI9341
+ * Display Driver for ILI9488
  * 
- * Wraps the ILI9341_t3 library with Norns-style graphics primitives
+ * Wraps the TFT_eSPI library with Norns-style graphics primitives
  */
 
 #ifndef DISPLAY_H
 #define DISPLAY_H
 
 #include <Arduino.h>
-#include <ILI9341_t3.h>
+#include <SPI.h>
+#include <TFT_eSPI.h>
 #include "config.h"
 
 class Display {
@@ -48,11 +49,18 @@ public:
     void clearClipRegion();
 
 private:
-    ILI9341_t3 tft;
-    
     // Clipping region for quadrant rendering
     int16_t clipX, clipY, clipW, clipH;
     bool clippingEnabled;
+    
+    // Low-level SPI functions
+    void spiWrite8(uint8_t c);
+    void spiWrite16(uint16_t c);
+    void writeCommand(uint8_t cmd);
+    void writeData(uint8_t data);
+    void writeData16(uint16_t data);
+    void setAddrWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
+    void pushColor(uint16_t color);
 };
 
-#endif // DISPLAY_H
+#endif

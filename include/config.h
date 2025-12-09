@@ -8,7 +8,7 @@
 #define CONFIG_H
 
 // ============================================================================
-// Display Configuration (ILI9341)
+// Display Configuration (ILI9488)
 // ============================================================================
 #ifndef TFT_DC
 #define TFT_DC    9
@@ -34,9 +34,9 @@
 #define TFT_MISO  12
 #endif
 
-// Display dimensions
-#define SCREEN_WIDTH   320
-#define SCREEN_HEIGHT  240
+// Display dimensions (landscape on ILI9488)
+#define SCREEN_WIDTH   480
+#define SCREEN_HEIGHT  320
 
 // ============================================================================
 // Button Configuration
