@@ -107,6 +107,8 @@
 // Script Manager Configuration
 // ============================================================================
 #define MAX_SCRIPTS   4    // Maximum concurrent scripts
+// Chord sequencer configuration
+#define MAX_CHORD_SLOTS 8   // Maximum chords in a progression
 
 // ============================================================================
 // UI Configuration - Norns-style aesthetics

@@ -6,7 +6,9 @@
 
 #include "ui.h"
 #include "script_manager.h"
+#include "chord_sequencer_script.h"
 #include <string.h>
+#include <cmath>
 #include <stdio.h>
 #include <math.h>
 #include <ctype.h>
@@ -75,7 +77,31 @@ UI::UI() : display(nullptr), clockTempo(DEFAULT_CLOCK_BPM), multitaskingMode(fal
         scriptSlots[i].lastCarouselSelectedIdx = 255;
         scriptSlots[i].carouselScrollOffset = 0;
         scriptSlots[i].lastCarouselScrollOffset = 0;
-        for (int j = 0; j < 4; j++) {
+        scriptSlots[i].chordCount = 0;
+        scriptSlots[i].lastChordCount = 255;
+        scriptSlots[i].chordListActive = false;
+        scriptSlots[i].lastChordListActive = false;
+        scriptSlots[i].chordListSelectedIdx = 0;
+        scriptSlots[i].chordListTargetSlot = 0;
+        scriptSlots[i].lastChordListSelectedIdx = 255;
+        scriptSlots[i].beatCountPickerActive = false;
+        scriptSlots[i].beatCountSelection = 8;
+        scriptSlots[i].lastBeatCountSelection = 255;
+        scriptSlots[i].lastBeatCountPickerActive = false;
+        // Global parameters
+        scriptSlots[i].selectedGlobalParam = 255;  // None selected initially
+        scriptSlots[i].editingGlobalParam = false;
+        scriptSlots[i].globalKey = 0;  // C
+        scriptSlots[i].globalTheoryMode = 0;  // Functional
+        scriptSlots[i].globalVoiceLeading = 0.5f;
+        scriptSlots[i].globalEnergy = 0.5f;
+        scriptSlots[i].lastSelectedGlobalParam = 255;
+        scriptSlots[i].lastEditingGlobalParam = false;
+        scriptSlots[i].lastGlobalKey = 255;
+        scriptSlots[i].lastGlobalTheoryMode = 255;
+        scriptSlots[i].lastGlobalVoiceLeading = -1.0f;
+        scriptSlots[i].lastGlobalEnergy = -1.0f;
+        for (int j = 0; j < MAX_CHORD_SLOTS; j++) {
             scriptSlots[i].chordRoots[j] = 0;  // Default to C
             scriptSlots[i].chordTypes[j] = 0;  // Default to major
             scriptSlots[i].chordBeats[j] = 16;  // Default to 16 beats
@@ -763,225 +789,446 @@ void UI::drawFooter(const char* leftLabel, const char* rightLabel) {
     drawButtonStrip(btn1, btn2, btn3, btn4);
 }
 
-void UI::drawChordSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h) {
+void UI::drawGlobalParameterBoxes(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h) {
     if (!display || slot >= MAX_SCRIPTS) return;
     
-    bool firstDraw = (scriptSlots[slot].lastCurrentChordSlot == 255);
+    // Note names and theory mode names for display
+    static const char* noteNames[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+    static const char* theoryModeNames[] = {"func", "diat", "modal", "chrom", "all"};
+    
+    // Layout: 4 boxes in a row below the chord progression
+    // Position them below the dots area
+    int16_t boxY = y + h - 35;  // Near bottom of slot
+    int16_t boxH = 28;
+    int16_t boxW = 70;
+    int16_t boxGap = 5;
+    int16_t boxStartX = x + 10;
+    
+    // Box data: label, value string
+    const char* labels[] = {"key", "theory", "compact", "energy"};
+    char values[4][16];
+    
+    // Format values
+    snprintf(values[0], sizeof(values[0]), "%s", noteNames[scriptSlots[slot].globalKey]);
+    snprintf(values[1], sizeof(values[1]), "%s", theoryModeNames[scriptSlots[slot].globalTheoryMode]);
+    snprintf(values[2], sizeof(values[2]), "%.2f", scriptSlots[slot].globalVoiceLeading);
+    snprintf(values[3], sizeof(values[3]), "%.2f", scriptSlots[slot].globalEnergy);
+    
+    // Force first draw if last values were never set
+    bool firstDraw = (scriptSlots[slot].lastSelectedGlobalParam == 255);
+    
+    // Check what changed (use tolerance for float comparisons to avoid flicker)
+    bool selectionChanged = (scriptSlots[slot].selectedGlobalParam != scriptSlots[slot].lastSelectedGlobalParam);
+    bool editStateChanged = (scriptSlots[slot].editingGlobalParam != scriptSlots[slot].lastEditingGlobalParam);
+    bool keyChanged = (scriptSlots[slot].globalKey != scriptSlots[slot].lastGlobalKey);
+    bool theoryChanged = (scriptSlots[slot].globalTheoryMode != scriptSlots[slot].lastGlobalTheoryMode);
+    
+    // Use tolerance for float comparisons to avoid flicker from precision issues
+    bool voiceLeadingChanged = (fabs(scriptSlots[slot].globalVoiceLeading - scriptSlots[slot].lastGlobalVoiceLeading) > 0.001f);
+    bool energyChanged = (fabs(scriptSlots[slot].globalEnergy - scriptSlots[slot].lastGlobalEnergy) > 0.001f);
+    
+    bool valuesChanged[4] = {keyChanged, theoryChanged, voiceLeadingChanged, energyChanged};
+    
+    for (int i = 0; i < 4; i++) {
+        int16_t boxX = boxStartX + i * (boxW + boxGap);
+        
+        // Determine if this box needs redrawing
+        bool needsRedraw = firstDraw || selectionChanged || editStateChanged || valuesChanged[i];
+        
+        if (!needsRedraw) continue;
+        
+        // Determine color based on selection and edit state
+        bool isSelected = (scriptSlots[slot].selectedGlobalParam == i);
+        bool isEditing = (isSelected && scriptSlots[slot].editingGlobalParam);
+        
+        uint16_t boxColor;
+        uint16_t textColor;
+        
+        if (isEditing) {
+            boxColor = COLOR_HIGHLIGHT;  // Yellow when editing
+            textColor = COLOR_BG;
+        } else if (isSelected) {
+            boxColor = COLOR_ACCENT;  // Cyan when selected
+            textColor = COLOR_BG;
+        } else {
+            boxColor = 0x1082;  // Dark gray when not selected
+            textColor = COLOR_FG;
+        }
+        
+        // Draw box
+        display->fillRoundRect(boxX, boxY, boxW, boxH, 4, boxColor);
+        
+        // Draw label (top)
+        int16_t labelY = boxY + 6;
+        display->drawText(boxX + 3, labelY, labels[i], textColor, FONT_SMALL);
+        
+        // Draw value (bottom, centered)
+        int16_t valueY = boxY + 18;
+        int16_t bx, by; uint16_t bw, bh;
+        display->getTextBounds(values[i], 0, 0, &bx, &by, &bw, &bh, FONT_SMALL);
+        int16_t valueX = boxX + (boxW - bw) / 2 - bx;
+        display->drawText(valueX, valueY, values[i], textColor, FONT_SMALL);
+    }
+    
+    // Update last values for change detection
+    scriptSlots[slot].lastSelectedGlobalParam = scriptSlots[slot].selectedGlobalParam;
+    scriptSlots[slot].lastEditingGlobalParam = scriptSlots[slot].editingGlobalParam;
+    scriptSlots[slot].lastGlobalKey = scriptSlots[slot].globalKey;
+    scriptSlots[slot].lastGlobalTheoryMode = scriptSlots[slot].globalTheoryMode;
+    scriptSlots[slot].lastGlobalVoiceLeading = scriptSlots[slot].globalVoiceLeading;
+    scriptSlots[slot].lastGlobalEnergy = scriptSlots[slot].globalEnergy;
+}
+
+void UI::drawChordSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h) {
+    if (!display || slot >= MAX_SCRIPTS) return;
+
+    // If overlay just closed, clear its area before redrawing base UI to avoid blanking afterward
+    if (!scriptSlots[slot].chordListActive && scriptSlots[slot].lastChordListActive) {
+        int16_t overlayX = x + 4;
+        int16_t overlayW = w - 8;
+        int16_t overlayY = y - 10;
+        int16_t overlayH = h + 20;
+        if (overlayY < 0) overlayY = 0;
+        if (overlayY + overlayH > SCREEN_HEIGHT) overlayH = SCREEN_HEIGHT - overlayY;
+        display->fillRect(overlayX, overlayY, overlayW, overlayH, COLOR_BG);
+        scriptSlots[slot].lastChordListActive = false;
+    }
+
+    bool overlayBlocksBase = scriptSlots[slot].chordListActive || scriptSlots[slot].beatCountPickerActive || scriptSlots[slot].carouselActive;
+    bool lastOverlayBlocks = scriptSlots[slot].lastChordListActive || scriptSlots[slot].lastBeatCountPickerActive || scriptSlots[slot].lastCarouselActive;
+    bool overlayJustClosed = (!overlayBlocksBase && lastOverlayBlocks);
+
+    // Detect chord count change to force full redraw (ensures + box and new chord show up immediately)
+    bool chordCountChanged = (scriptSlots[slot].chordCount != scriptSlots[slot].lastChordCount);
+
+    bool firstDraw = overlayJustClosed || chordCountChanged || (scriptSlots[slot].lastCurrentChordSlot == 255);
+
+    // When an overlay is active, keep base visuals off and force full redraw when it closes
+    if (overlayBlocksBase) {
+        scriptSlots[slot].lastCurrentChordSlot = 255;
+        scriptSlots[slot].lastChordBeatCounter = 255;
+        scriptSlots[slot].lastSelectedChordSlot = 255;
+        if (!lastOverlayBlocks) {
+            display->fillRect(x + 6, y, w - 12, h, COLOR_BG);
+        }
+    }
     
     // Note names for display
     const char* noteNames[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
     const char* typeNames[] = {"maj", "min"};
+
+    // Clamp selection to existing chords (+ optional plus box)
+    uint8_t chordCount = scriptSlots[slot].chordCount;
+    if (chordCount > MAX_CHORD_SLOTS) chordCount = MAX_CHORD_SLOTS;
+    bool hasChords = (chordCount > 0);
+    bool hasPlusBox = (chordCount < MAX_CHORD_SLOTS);
+
+    // plus box is always addressable at index chordCount when capacity remains; if no chords, plus box sits at 0
+    uint8_t maxSelectable = hasPlusBox ? (chordCount + 1) : chordCount;
+    if (maxSelectable == 0) maxSelectable = 1;  // Ensure plus box selectable when empty
+    if (scriptSlots[slot].selectedChordSlot >= maxSelectable) {
+        scriptSlots[slot].selectedChordSlot = maxSelectable - 1;
+    }
     
     // Calculate total beats
     uint16_t totalBeats = 0;
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < chordCount; i++) {
         totalBeats += scriptSlots[slot].chordBeats[i];
     }
     if (totalBeats == 0) totalBeats = 1;  // Avoid division by zero
     
-    // Area chart layout: horizontal bars with width proportional to beat count
-    int16_t chartH = 56;  // Reduced height (80% of previous)
-    int16_t chartY = y + (h - chartH) / 2; // Vertically center within slot
-    int16_t chartStartX = x + 10;
-    int16_t chartW = w - 20;  // Available width
-
-    // Dot rendering helpers (span exactly the chord band width)
-    int16_t dotY = chartY + chartH - 8;   // Lower so it stays clear of text
-    int16_t dotStartX = chartStartX;
-
-
+    // Layout: Fixed progression width (260px), then + box (20px)
+    int16_t progressionW = 260;  // Fixed width for step progression
+    int16_t plusBoxW = 20;
+    int16_t gapBetween = 6;
+    int16_t startX = x + 10;  // Left padding
+    int16_t plusBoxX = startX + progressionW + gapBetween;
+    
+    // Vertical positioning: center the progression in available height
+    int16_t chartH = 40;  // Height of chord boxes
+    int16_t chartY = y + (h - chartH) / 2;
+    
+    // Step calculations
+    float pixelsPerStep = (float)progressionW / (float)totalBeats;
+    
     // Helper: compute absolute beat index for current chord/beat
     auto getAbsoluteBeat = [&](void) -> uint16_t {
         uint16_t offset = 0;
-        for (uint8_t i = 0; i < scriptSlots[slot].currentChordSlot; i++) {
+        for (uint8_t i = 0; i < scriptSlots[slot].currentChordSlot && i < chordCount; i++) {
             offset += scriptSlots[slot].chordBeats[i];
         }
         return offset + scriptSlots[slot].chordBeatCounter;
     };
-
-    // Helper: find chord index for a given absolute beat
-    auto chordForBeat = [&](uint16_t beatIndex) -> uint8_t {
-        uint16_t running = 0;
-        for (uint8_t i = 0; i < 4; i++) {
-            uint16_t next = running + scriptSlots[slot].chordBeats[i];
-            if (beatIndex < next) return i;
-            running = next;
-        }
-        return 3; // fallback
-    };
-
-    // Helper: redraw all dots across all chords with current beat highlight
-    auto redrawDots = [&]() {
-        uint16_t absoluteCurrent = getAbsoluteBeat();
-        uint16_t totalSpan = (totalBeats > 1) ? (totalBeats - 1) : 1;
-
-        // First pass: reset all dots to light blue background
-        for (uint16_t b = 0; b < totalBeats; b++) {
-            int16_t dotX = dotStartX + (int32_t)((chartW * b) / totalSpan);
-            display->fillCircle(dotX, dotY, 3, 0x5D9F);
-        }
-
-        // Second pass: draw dots with highlight for current beat only
-        for (uint16_t b = 0; b < totalBeats; b++) {
-            int16_t dotX = dotStartX + (int32_t)((chartW * b) / totalSpan);
-            bool isCurrentBeat = (b == absoluteCurrent);
-            int16_t dotRadius = isCurrentBeat ? 3 : 2;
-            display->fillCircle(dotX, dotY, dotRadius, COLOR_BG);
-        }
-    };
     
-    if (firstDraw) {
-        // Clear content area
-        display->fillRect(x + 6, y, w - 12, h, COLOR_BG);
-        
-        // Draw area chart: each chord gets proportional width
-        int16_t currentX = chartStartX;
-        for (int i = 0; i < 4; i++) {
-            // Calculate width based on beat proportion
-            int16_t segmentW = (chartW * scriptSlots[slot].chordBeats[i]) / totalBeats;
-            if (i == 3) segmentW = chartStartX + chartW - currentX;  // Last segment fills remaining
+    if (!overlayBlocksBase) {
+        if (firstDraw) {
+            // Full redraw: clear, draw all chord boxes, draw dots, draw plus box
+            display->fillRect(x + 6, y, w - 12, h, COLOR_BG);
             
-            bool isSelected = (i == scriptSlots[slot].selectedChordSlot);
-            uint16_t fillColor = isSelected ? COLOR_ACCENT : 0x5D9F;  // Cyan if selected, light blue otherwise
-            
-            // Draw filled rounded rectangle (no border)
-            display->fillRoundRect(currentX, chartY, segmentW, chartH, 8, fillColor);
-            
-            // Draw chord name: root larger, type smaller; centered as a group
-            char rootLabel[4];
-            char typeLabel[4];
-            snprintf(rootLabel, sizeof(rootLabel), "%s", noteNames[scriptSlots[slot].chordRoots[i]]);
-            snprintf(typeLabel, sizeof(typeLabel), "%s", typeNames[scriptSlots[slot].chordTypes[i]]);
-
-            int16_t bxR, byR, bxT, byT; uint16_t bwR, bhR, bwT, bhT;
-            display->getTextBounds(rootLabel, 0, 0, &bxR, &byR, &bwR, &bhR, FONT_MEDIUM);
-            display->getTextBounds(typeLabel, 0, 0, &bxT, &byT, &bwT, &bhT, FONT_SMALL);
-
-            int16_t totalW = bwR + 2 + bwT;
-            int16_t textX = currentX + (segmentW - totalW) / 2 - bxR;
-            int16_t textY = chartY + (chartH - max((uint16_t)bhR, (uint16_t)bhT)) / 2 - min(byR, byT);
-
-            display->drawText(textX, textY, rootLabel, COLOR_BG, FONT_MEDIUM);
-            display->drawText(textX + bwR + 2 - bxT, textY, typeLabel, COLOR_BG, FONT_SMALL);
-
-            currentX += segmentW;
-        }
-        
-        // Draw unified beat dots string across all chords
-        redrawDots();
-
-        // Mark as initialized
-        scriptSlots[slot].lastCurrentChordSlot = scriptSlots[slot].currentChordSlot;
-        scriptSlots[slot].lastChordBeatCounter = scriptSlots[slot].chordBeatCounter;
-        scriptSlots[slot].lastSelectedChordSlot = scriptSlots[slot].selectedChordSlot;
-        for (int i = 0; i < 4; i++) {
-            scriptSlots[slot].lastChordRoots[i] = scriptSlots[slot].chordRoots[i];
-            scriptSlots[slot].lastChordTypes[i] = scriptSlots[slot].chordTypes[i];
-            scriptSlots[slot].lastChordBeats[i] = scriptSlots[slot].chordBeats[i];
-        }
-    } else {
-        // Check if beats changed - need full redraw of chart
-        bool beatsChanged = false;
-        for (int i = 0; i < 4; i++) {
-            if (scriptSlots[slot].chordBeats[i] != scriptSlots[slot].lastChordBeats[i]) {
-                beatsChanged = true;
-                break;
-            }
-        }
-        
-        if (beatsChanged) {
-            // Redraw entire area chart
-            display->fillRect(chartStartX, chartY, chartW, chartH, COLOR_BG);
-            
-            int16_t currentX = chartStartX;
-            for (int i = 0; i < 4; i++) {
-                int16_t segmentW = (chartW * scriptSlots[slot].chordBeats[i]) / totalBeats;
-                if (i == 3) segmentW = chartStartX + chartW - currentX;
-                
-                bool isSelected = (i == scriptSlots[slot].selectedChordSlot);
-                uint16_t fillColor = isSelected ? COLOR_ACCENT : 0x5D9F;
-                
-                display->fillRoundRect(currentX, chartY, segmentW, chartH, 8, fillColor);
-                
-                char rootLabel[4];
-                char typeLabel[4];
-                snprintf(rootLabel, sizeof(rootLabel), "%s", noteNames[scriptSlots[slot].chordRoots[i]]);
-                snprintf(typeLabel, sizeof(typeLabel), "%s", typeNames[scriptSlots[slot].chordTypes[i]]);
-
-                int16_t bxR, byR, bxT, byT; uint16_t bwR, bhR, bwT, bhT;
-                display->getTextBounds(rootLabel, 0, 0, &bxR, &byR, &bwR, &bhR, FONT_MEDIUM);
-                display->getTextBounds(typeLabel, 0, 0, &bxT, &byT, &bwT, &bhT, FONT_SMALL);
-
-                int16_t totalW = bwR + 2 + bwT;
-                int16_t textX = currentX + (segmentW - totalW) / 2 - bxR;
-                int16_t textY = chartY + (chartH - max((uint16_t)bhR, (uint16_t)bhT)) / 2 - min(byR, byT);
-
-                display->drawText(textX, textY, rootLabel, COLOR_BG, FONT_MEDIUM);
-                display->drawText(textX + bwR + 2 - bxT, textY, typeLabel, COLOR_BG, FONT_SMALL);
-                
-                currentX += segmentW;
-            }
-            
-            for (int i = 0; i < 4; i++) {
-                scriptSlots[slot].lastChordBeats[i] = scriptSlots[slot].chordBeats[i];
-            }
-
-            // Redraw unified beat dots after beat count change
-            redrawDots();
-        }
-        
-        // Check if selected chord changed (highlight change)
-        if (scriptSlots[slot].selectedChordSlot != scriptSlots[slot].lastSelectedChordSlot) {
-            // Redraw both old and new segments with updated colors
-            int16_t currentX = chartStartX;
-            for (int i = 0; i < 4; i++) {
-                int16_t segmentW = (chartW * scriptSlots[slot].chordBeats[i]) / totalBeats;
-                if (i == 3) segmentW = chartStartX + chartW - currentX;
-                
-                if (i == scriptSlots[slot].lastSelectedChordSlot || i == scriptSlots[slot].selectedChordSlot) {
-                    bool isSelected = (i == scriptSlots[slot].selectedChordSlot);
-                    uint16_t fillColor = isSelected ? COLOR_ACCENT : 0x5D9F;
-                    
-                    display->fillRoundRect(currentX, chartY, segmentW, chartH, 8, fillColor);
-                    
-                    char rootLabel[4];
-                    char typeLabel[4];
-                    snprintf(rootLabel, sizeof(rootLabel), "%s", noteNames[scriptSlots[slot].chordRoots[i]]);
-                    snprintf(typeLabel, sizeof(typeLabel), "%s", typeNames[scriptSlots[slot].chordTypes[i]]);
-
-                    int16_t bxR, byR, bxT, byT; uint16_t bwR, bhR, bwT, bhT;
-                    display->getTextBounds(rootLabel, 0, 0, &bxR, &byR, &bwR, &bhR, FONT_MEDIUM);
-                    display->getTextBounds(typeLabel, 0, 0, &bxT, &byT, &bwT, &bhT, FONT_SMALL);
-
-                    int16_t totalW = bwR + 2 + bwT;
-                    int16_t textX = currentX + (segmentW - totalW) / 2 - bxR;
-                    int16_t textY = chartY + (chartH - max((uint16_t)bhR, (uint16_t)bhT)) / 2 - min(byR, byT);
-
-                    display->drawText(textX, textY, rootLabel, COLOR_BG, FONT_MEDIUM);
-                    display->drawText(textX + bwR + 2 - bxT, textY, typeLabel, COLOR_BG, FONT_SMALL);
+            // Draw chord boxes with rounded edges
+            int16_t beatX = startX;
+            for (int i = 0; i < chordCount; i++) {
+                // Calculate box position and width based on beat count
+                float boxW = scriptSlots[slot].chordBeats[i] * pixelsPerStep;
+                int16_t boxWidth = (int16_t)roundf(boxW);
+                if (i == chordCount - 1) {
+                    // Last box extends to fill remaining space
+                    boxWidth = startX + progressionW - (int16_t)beatX;
                 }
                 
-                currentX += segmentW;
+                bool isSelected = (i == scriptSlots[slot].selectedChordSlot);
+                uint16_t boxColor = isSelected ? COLOR_ACCENT : 0x5D9F;
+                
+                // Draw rounded rectangle for chord
+                display->fillRoundRect(beatX, chartY, boxWidth, chartH, 6, boxColor);
+                
+                // Draw chord label (root + type) centered in box
+                char label[8];
+                snprintf(label, sizeof(label), "%s%s", noteNames[scriptSlots[slot].chordRoots[i]], 
+                         typeNames[scriptSlots[slot].chordTypes[i]]);
+                
+                int16_t bx, by; uint16_t bw, bh;
+                display->getTextBounds(label, 0, 0, &bx, &by, &bw, &bh, FONT_SMALL);
+                int16_t labelX = beatX + (boxWidth - bw) / 2 - bx;
+                int16_t labelY = chartY + (chartH - bh) / 2 - by;
+                display->drawText(labelX, labelY, label, COLOR_BG, FONT_SMALL);
+                
+                beatX += boxWidth;
             }
             
+            // Draw step indicator dots below chord boxes
+            int16_t dotY = chartY + chartH + 8;
+            for (int step = 0; step < totalBeats; step++) {
+                int16_t dotX = startX + (int16_t)(step * pixelsPerStep + pixelsPerStep / 2);
+                
+                // Highlight current step
+                uint16_t dotColor = (step == getAbsoluteBeat()) ? COLOR_ACCENT : COLOR_DIM;
+                display->fillCircle(dotX, dotY, 2, dotColor);
+            }
+            
+            // Draw plus box for adding chords
+            if (hasPlusBox) {
+                uint16_t plusColor = (scriptSlots[slot].selectedChordSlot == chordCount) ? COLOR_ACCENT : 0x1082;
+                int16_t plusBoxY = chartY + (chartH / 2) - 10;
+                int16_t plusBoxH = 20;
+                display->fillRoundRect(plusBoxX, plusBoxY, plusBoxW, plusBoxH, 4, plusColor);
+                int16_t bx, by; uint16_t bw, bh;
+                display->getTextBounds("+", 0, 0, &bx, &by, &bw, &bh, FONT_MEDIUM);
+                int16_t textX = plusBoxX + (plusBoxW - bw) / 2 - bx;
+                int16_t textY = plusBoxY + (plusBoxH - bh) / 2 - by;
+                display->drawText(textX, textY, "+", COLOR_BG, FONT_MEDIUM);
+            }
+            
+            // Mark as initialized
+            scriptSlots[slot].lastCurrentChordSlot = scriptSlots[slot].currentChordSlot;
+            scriptSlots[slot].lastChordBeatCounter = scriptSlots[slot].chordBeatCounter;
             scriptSlots[slot].lastSelectedChordSlot = scriptSlots[slot].selectedChordSlot;
+            for (int i = 0; i < chordCount; i++) {
+                scriptSlots[slot].lastChordRoots[i] = scriptSlots[slot].chordRoots[i];
+                scriptSlots[slot].lastChordTypes[i] = scriptSlots[slot].chordTypes[i];
+                scriptSlots[slot].lastChordBeats[i] = scriptSlots[slot].chordBeats[i];
+            }
+        } else {
+            // Check if beats changed - need full redraw of chord boxes
+            bool beatsChanged = false;
+            for (int i = 0; i < chordCount; i++) {
+                if (scriptSlots[slot].chordBeats[i] != scriptSlots[slot].lastChordBeats[i]) {
+                    beatsChanged = true;
+                    break;
+                }
+            }
+            
+            if (beatsChanged || chordCountChanged) {
+                // Clear and redraw chord boxes and dots
+                display->fillRect(startX, chartY - 5, progressionW, chartH + 20, COLOR_BG);
+                
+                int16_t beatX = startX;
+                for (int i = 0; i < chordCount; i++) {
+                    float boxW = scriptSlots[slot].chordBeats[i] * pixelsPerStep;
+                    int16_t boxWidth = (int16_t)roundf(boxW);
+                    if (i == chordCount - 1) {
+                        boxWidth = startX + progressionW - (int16_t)beatX;
+                    }
+                    
+                    bool isSelected = (i == scriptSlots[slot].selectedChordSlot);
+                    uint16_t boxColor = isSelected ? COLOR_ACCENT : 0x5D9F;
+                    
+                    display->fillRoundRect(beatX, chartY, boxWidth, chartH, 6, boxColor);
+                    
+                    char label[8];
+                    snprintf(label, sizeof(label), "%s%s", noteNames[scriptSlots[slot].chordRoots[i]], 
+                             typeNames[scriptSlots[slot].chordTypes[i]]);
+                    
+                    int16_t bx, by; uint16_t bw, bh;
+                    display->getTextBounds(label, 0, 0, &bx, &by, &bw, &bh, FONT_SMALL);
+                    int16_t labelX = beatX + (boxWidth - bw) / 2 - bx;
+                    int16_t labelY = chartY + (chartH - bh) / 2 - by;
+                    display->drawText(labelX, labelY, label, COLOR_BG, FONT_SMALL);
+                    
+                    beatX += boxWidth;
+                }
+                
+                // Redraw dots after beat change
+                int16_t dotY = chartY + chartH + 8;
+                for (int step = 0; step < totalBeats; step++) {
+                    int16_t dotX = startX + (int16_t)(step * pixelsPerStep + pixelsPerStep / 2);
+                    uint16_t dotColor = (step == getAbsoluteBeat()) ? COLOR_ACCENT : COLOR_DIM;
+                    display->fillCircle(dotX, dotY, 2, dotColor);
+                }
+                
+                // Update cached beat counts
+                for (int i = 0; i < chordCount; i++) {
+                    scriptSlots[slot].lastChordBeats[i] = scriptSlots[slot].chordBeats[i];
+                }
+                
+                // Redraw plus box after beat change
+                if (hasPlusBox) {
+                    uint16_t plusColor = (scriptSlots[slot].selectedChordSlot == chordCount) ? COLOR_ACCENT : 0x1082;
+                    int16_t plusBoxY = chartY + (chartH / 2) - 10;
+                    int16_t plusBoxH = 20;
+                    display->fillRoundRect(plusBoxX, plusBoxY, plusBoxW, plusBoxH, 4, plusColor);
+                    int16_t bx, by; uint16_t bw, bh;
+                    display->getTextBounds("+", 0, 0, &bx, &by, &bw, &bh, FONT_MEDIUM);
+                    int16_t textX = plusBoxX + (plusBoxW - bw) / 2 - bx;
+                    int16_t textY = plusBoxY + (plusBoxH - bh) / 2 - by;
+                    display->drawText(textX, textY, "+", COLOR_BG, FONT_MEDIUM);
+                }
 
-            // Redraw dots to ensure highlight sits above updated segments
-            redrawDots();
+                // Redraw plus box whenever chord count changes (capacity/position may shift)
+                if (hasPlusBox) {
+                    uint16_t plusColor = (scriptSlots[slot].selectedChordSlot == chordCount) ? COLOR_ACCENT : 0x1082;
+                    int16_t plusBoxY = chartY + (chartH / 2) - 10;
+                    int16_t plusBoxH = 20;
+                    display->fillRoundRect(plusBoxX, plusBoxY, plusBoxW, plusBoxH, 4, plusColor);
+                    int16_t bx, by; uint16_t bw, bh;
+                    display->getTextBounds("+", 0, 0, &bx, &by, &bw, &bh, FONT_MEDIUM);
+                    int16_t textX = plusBoxX + (plusBoxW - bw) / 2 - bx;
+                    int16_t textY = plusBoxY + (plusBoxH - bh) / 2 - by;
+                    display->drawText(textX, textY, "+", COLOR_BG, FONT_MEDIUM);
+                }
+            }
+            
+            // Check if selection or playback position changed
+            bool selectionChanged = (scriptSlots[slot].selectedChordSlot != scriptSlots[slot].lastSelectedChordSlot);
+            bool playbackChanged = (scriptSlots[slot].currentChordSlot != scriptSlots[slot].lastCurrentChordSlot ||
+                                   scriptSlots[slot].chordBeatCounter != scriptSlots[slot].lastChordBeatCounter);
+            
+            // Only redraw when something actually changed
+            if (!beatsChanged && selectionChanged) {
+                // Selective redraw: only redraw affected chord boxes when selection changes
+                int16_t beatX = startX;
+                for (int i = 0; i < chordCount; i++) {
+                    float boxW = scriptSlots[slot].chordBeats[i] * pixelsPerStep;
+                    int16_t boxWidth = (int16_t)roundf(boxW);
+                    if (i == chordCount - 1) {
+                        boxWidth = startX + progressionW - (int16_t)beatX;
+                    }
+                    
+                    // Only redraw if this box changed selection state
+                    bool wasSelected = (i == scriptSlots[slot].lastSelectedChordSlot);
+                    bool isSelected = (i == scriptSlots[slot].selectedChordSlot);
+                    
+                    if (wasSelected != isSelected) {
+                        uint16_t boxColor = isSelected ? COLOR_ACCENT : 0x5D9F;
+                        display->fillRoundRect(beatX, chartY, boxWidth, chartH, 6, boxColor);
+                        
+                        char label[8];
+                        snprintf(label, sizeof(label), "%s%s", noteNames[scriptSlots[slot].chordRoots[i]], 
+                                 typeNames[scriptSlots[slot].chordTypes[i]]);
+                        
+                        int16_t bx, by; uint16_t bw, bh;
+                        display->getTextBounds(label, 0, 0, &bx, &by, &bw, &bh, FONT_SMALL);
+                        int16_t labelX = beatX + (boxWidth - bw) / 2 - bx;
+                        int16_t labelY = chartY + (chartH - bh) / 2 - by;
+                        display->drawText(labelX, labelY, label, COLOR_BG, FONT_SMALL);
+                    }
+                    
+                    beatX += boxWidth;
+                }
+                
+                // Redraw plus box if selection changed to/from it
+                if (hasPlusBox) {
+                    bool wasPlusSelected = (scriptSlots[slot].lastSelectedChordSlot == chordCount);
+                    bool isPlusSelected = (scriptSlots[slot].selectedChordSlot == chordCount);
+                    
+                    if (wasPlusSelected != isPlusSelected) {
+                        uint16_t plusColor = isPlusSelected ? COLOR_ACCENT : 0x1082;
+                        int16_t plusBoxY = chartY + (chartH / 2) - 10;
+                        int16_t plusBoxH = 20;
+                        display->fillRoundRect(plusBoxX, plusBoxY, plusBoxW, plusBoxH, 4, plusColor);
+                        int16_t bx, by; uint16_t bw, bh;
+                        display->getTextBounds("+", 0, 0, &bx, &by, &bw, &bh, FONT_MEDIUM);
+                        int16_t textX = plusBoxX + (plusBoxW - bw) / 2 - bx;
+                        int16_t textY = plusBoxY + (plusBoxH - bh) / 2 - by;
+                        display->drawText(textX, textY, "+", COLOR_BG, FONT_MEDIUM);
+                    }
+                }
+            }
+            
+            if (!beatsChanged && playbackChanged) {
+                // Only redraw playback indicator dots when position changes
+                int16_t dotY = chartY + chartH + 8;
+                
+                // Clear old position dot
+                uint16_t lastBeat = 0;
+                for (uint8_t i = 0; i < scriptSlots[slot].lastCurrentChordSlot && i < chordCount; i++) {
+                    lastBeat += scriptSlots[slot].chordBeats[i];
+                }
+                lastBeat += scriptSlots[slot].lastChordBeatCounter;
+                if (lastBeat < totalBeats) {
+                    int16_t lastDotX = startX + (int16_t)(lastBeat * pixelsPerStep + pixelsPerStep / 2);
+                    display->fillCircle(lastDotX, dotY, 2, COLOR_DIM);
+                }
+                
+                // Draw new position dot
+                uint16_t currentBeat = getAbsoluteBeat();
+                if (currentBeat < totalBeats) {
+                    int16_t dotX = startX + (int16_t)(currentBeat * pixelsPerStep + pixelsPerStep / 2);
+                    display->fillCircle(dotX, dotY, 2, COLOR_ACCENT);
+                }
+            }
+
+            // Always redraw plus box every frame to keep it visible regardless of navigation direction
+            if (hasPlusBox) {
+                uint16_t plusColor = (scriptSlots[slot].selectedChordSlot == chordCount) ? COLOR_ACCENT : 0x1082;
+                int16_t plusBoxY = chartY + (chartH / 2) - 10;
+                int16_t plusBoxH = 20;
+                display->fillRoundRect(plusBoxX, plusBoxY, plusBoxW, plusBoxH, 4, plusColor);
+                int16_t bx, by; uint16_t bw, bh;
+                display->getTextBounds("+", 0, 0, &bx, &by, &bw, &bh, FONT_MEDIUM);
+                int16_t textX = plusBoxX + (plusBoxW - bw) / 2 - bx;
+                int16_t textY = plusBoxY + (plusBoxH - bh) / 2 - by;
+                display->drawText(textX, textY, "+", COLOR_BG, FONT_MEDIUM);
+            } else {
+                // If no plus box (full), clear its area so stale pixels don't linger
+                display->fillRect(plusBoxX, chartY - 2, plusBoxW + gapBetween, chartH + 24, COLOR_BG);
+            }
+            
+            // Update selection and playback state tracking
+            scriptSlots[slot].lastSelectedChordSlot = scriptSlots[slot].selectedChordSlot;
+            scriptSlots[slot].lastCurrentChordSlot = scriptSlots[slot].currentChordSlot;
+            scriptSlots[slot].lastChordBeatCounter = scriptSlots[slot].chordBeatCounter;
+            scriptSlots[slot].lastChordListActive = false;
+            scriptSlots[slot].lastBeatCountPickerActive = false;
+            scriptSlots[slot].lastCarouselActive = false;
         }
         
-        // Update beat dots when beat counter changes
-        if (scriptSlots[slot].chordBeatCounter != scriptSlots[slot].lastChordBeatCounter) {
-            redrawDots();
-            scriptSlots[slot].lastChordBeatCounter = scriptSlots[slot].chordBeatCounter;
+        // Draw global parameter boxes below chord progression (always visible)
+        if (!overlayBlocksBase) {
+            drawGlobalParameterBoxes(slot, x, y, w, h);
         }
     }
     
-    // Draw carousel overlay if active (on top of chord sequencer)
-    drawChordSequencerCarouselOverlay(slot, x, y, w, h);
+    // Draw chord list overlay if active (on top of chord sequencer)
+    if (!scriptSlots[slot].beatCountPickerActive) {
+        drawChordListOverlay(slot, x, y, w, h);
+    }
 
-    // Always draw beat dots last so they appear above carousel overlay
-    redrawDots();
+    // Draw beat count picker overlay if active (replaces everything)
+    drawBeatCountPickerOverlay(slot, x, y, w, h);
+
+    // Track chord count for next frame
+    scriptSlots[slot].lastChordCount = chordCount;
 }
 
 void UI::drawButtonStrip(const char* btn1, const char* btn2, const char* btn3, const char* btn4) {
@@ -1451,21 +1698,34 @@ void UI::cycleDirection(uint8_t slot) {
     scriptSlots[slot].seqDirection = (scriptSlots[slot].seqDirection + 1) % 4;
 }
 
-void UI::updateChordSequencer(uint8_t slot, uint8_t chordRoots[4], uint8_t chordTypes[4], uint8_t chordBeats[4], uint8_t currentChordSlot, uint8_t beatCounter) {
+void UI::updateChordSequencer(uint8_t slot, uint8_t chordRoots[MAX_CHORD_SLOTS], uint8_t chordTypes[MAX_CHORD_SLOTS], uint8_t chordBeats[MAX_CHORD_SLOTS], uint8_t currentChordSlot, uint8_t beatCounter, uint8_t chordCount) {
     if (slot >= MAX_SCRIPTS) return;
-    
-    for (int i = 0; i < 4; i++) {
+
+    uint8_t limitedCount = chordCount;
+    if (limitedCount > MAX_CHORD_SLOTS) limitedCount = MAX_CHORD_SLOTS;
+
+    for (int i = 0; i < MAX_CHORD_SLOTS; i++) {
         scriptSlots[slot].chordRoots[i] = chordRoots[i];
         scriptSlots[slot].chordTypes[i] = chordTypes[i];
         scriptSlots[slot].chordBeats[i] = chordBeats[i];
     }
     scriptSlots[slot].currentChordSlot = currentChordSlot;
     scriptSlots[slot].chordBeatCounter = beatCounter;
+    scriptSlots[slot].chordCount = limitedCount;
     
     // Initialize selectedChordSlot if not already done
-    if (scriptSlots[slot].selectedChordSlot > 3) {
-        scriptSlots[slot].selectedChordSlot = 0;
+    if (scriptSlots[slot].selectedChordSlot > limitedCount) {
+        scriptSlots[slot].selectedChordSlot = 0;  // Reset to first chord
         scriptSlots[slot].lastSelectedChordSlot = 255;  // Force first draw
+    }
+}
+
+void UI::updateChordSequencerGlobals(uint8_t slot, const GlobalParameters& globals) {
+    if (slot >= MAX_SCRIPTS) return;
+    
+    // Only sync if not currently editing (don't overwrite user's in-progress edits)
+    if (!scriptSlots[slot].editingGlobalParam) {
+        syncGlobalsFromScript(slot, globals);
     }
 }
 
@@ -1841,12 +2101,18 @@ void UI::drawChordSequencerCarouselOverlay(uint8_t slot, int16_t x, int16_t y, i
     const char* typeNames[] = {"maj", "min"};
     char chordBuffer[16];
     
-    // Get selected chord slot
+    // Get selected chord slot (clamp away from plus box)
+    uint8_t chordCount = scriptSlots[slot].chordCount;
+    if (chordCount == 0) chordCount = 1;
+    if (chordCount > MAX_CHORD_SLOTS) chordCount = MAX_CHORD_SLOTS;
     uint8_t selectedChordSlot = scriptSlots[slot].selectedChordSlot;
-    
+    if (selectedChordSlot >= chordCount) {
+        selectedChordSlot = chordCount - 1;
+    }
+
     // Calculate total beats
     uint16_t totalBeats = 0;
-    for (int i = 0; i < 4; i++) {
+    for (uint8_t i = 0; i < chordCount; i++) {
         totalBeats += scriptSlots[slot].chordBeats[i];
     }
     if (totalBeats == 0) totalBeats = 1;
@@ -1861,7 +2127,7 @@ void UI::drawChordSequencerCarouselOverlay(uint8_t slot, int16_t x, int16_t y, i
     
     // Calculate selected chord box X position and width
     int16_t selectedChordX = chartStartX;
-    for (int i = 0; i < selectedChordSlot; i++) {
+    for (uint8_t i = 0; i < selectedChordSlot; i++) {
         int16_t segmentW = (chartW * scriptSlots[slot].chordBeats[i]) / totalBeats;
         selectedChordX += segmentW;
     }
@@ -1978,6 +2244,264 @@ void UI::drawChordSequencerCarouselOverlay(uint8_t slot, int16_t x, int16_t y, i
     scriptSlots[slot].lastCarouselSelectedIdx = selectedIdx;
 }
 
+// Full-screen chord list overlay
+void UI::openChordList(uint8_t slot, uint8_t targetSlot) {
+    if (slot >= MAX_SCRIPTS) return;
+
+    uint8_t chordCount = scriptSlots[slot].chordCount;
+    if (chordCount > MAX_CHORD_SLOTS) chordCount = MAX_CHORD_SLOTS;
+    scriptSlots[slot].chordListActive = true;
+    scriptSlots[slot].lastChordListActive = false; // Force draw
+    scriptSlots[slot].chordListTargetSlot = targetSlot;
+
+    // Start selection on current chord value when editing an existing slot
+    uint8_t startRoot = 0;
+    uint8_t startType = 0;
+    if (targetSlot < chordCount) {
+        startRoot = scriptSlots[slot].chordRoots[targetSlot];
+        startType = scriptSlots[slot].chordTypes[targetSlot];
+    }
+
+    uint8_t matchedIdx = 0;
+    for (uint8_t i = 0; i < 12; i++) {
+        if (chordLibrary[i].root == startRoot && chordLibrary[i].type == startType) {
+            matchedIdx = i;
+            break;
+        }
+    }
+    scriptSlots[slot].chordListSelectedIdx = matchedIdx;
+    scriptSlots[slot].lastChordListSelectedIdx = 255; // Force selection draw
+}
+
+void UI::navigateChordList(uint8_t slot, int8_t delta) {
+    if (slot >= MAX_SCRIPTS) return;
+    if (!scriptSlots[slot].chordListActive) return;
+
+    int16_t idx = (int16_t)scriptSlots[slot].chordListSelectedIdx + delta;
+    while (idx < 0) idx += 12;
+    while (idx >= 12) idx -= 12;
+    scriptSlots[slot].chordListSelectedIdx = (uint8_t)idx;
+}
+
+uint8_t UI::selectFromChordList(uint8_t slot) {
+    if (slot >= MAX_SCRIPTS) return 255;
+    if (!scriptSlots[slot].chordListActive) return 255;
+
+    uint8_t chordCount = scriptSlots[slot].chordCount;
+    if (chordCount > MAX_CHORD_SLOTS) chordCount = MAX_CHORD_SLOTS;
+    uint8_t target = scriptSlots[slot].chordListTargetSlot;
+    if (target > chordCount) target = chordCount; // Safeguard for add slot
+
+    uint8_t root = chordLibrary[scriptSlots[slot].chordListSelectedIdx].root;
+    uint8_t type = chordLibrary[scriptSlots[slot].chordListSelectedIdx].type;
+
+    // If targeting the plus box, append a new chord when there's room; otherwise edit the last slot
+    if (target >= chordCount) {
+        if (chordCount < MAX_CHORD_SLOTS) {
+            scriptSlots[slot].chordCount = chordCount + 1;
+            target = chordCount;
+            scriptSlots[slot].chordBeats[target] = 8; // Default beat length for new chords
+        } else {
+            target = (chordCount > 0) ? (chordCount - 1) : 0;
+        }
+    }
+
+    if (target < MAX_CHORD_SLOTS) {
+        scriptSlots[slot].chordRoots[target] = root;
+        scriptSlots[slot].chordTypes[target] = type;
+        scriptSlots[slot].lastChordRoots[target] = 255; // Force redraw detection
+        scriptSlots[slot].lastChordTypes[target] = 255;
+        scriptSlots[slot].selectedChordSlot = target;
+    }
+
+    // Close overlay and force redraw
+    scriptSlots[slot].chordListActive = false;
+    scriptSlots[slot].lastChordListActive = true; // Ensure clear
+    scriptSlots[slot].lastChordListSelectedIdx = 255;
+    scriptSlots[slot].lastSelectedChordSlot = 255;
+    scriptSlots[slot].lastCurrentChordSlot = 255;
+    scriptSlots[slot].lastChordBeatCounter = 255;
+
+    return target;
+}
+
+void UI::drawChordListOverlay(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h) {
+    if (!display || slot >= MAX_SCRIPTS) return;
+
+    bool active = scriptSlots[slot].chordListActive;
+    bool wasActive = scriptSlots[slot].lastChordListActive;
+    uint8_t selectedIdx = scriptSlots[slot].chordListSelectedIdx;
+    uint8_t lastSelectedIdx = scriptSlots[slot].lastChordListSelectedIdx;
+
+    // If overlay is inactive, just update tracking and exit
+    if (!active) {
+        scriptSlots[slot].lastChordListActive = false;
+        return;
+    }
+
+    // Overlay geometry (pad slightly above and below sequencer area)
+    int16_t overlayX = x + 4;
+    int16_t overlayW = w - 8;
+    int16_t overlayY = y - 10;
+    int16_t overlayH = h + 20;
+    if (overlayY < 0) overlayY = 0;
+    if (overlayY + overlayH > SCREEN_HEIGHT) overlayH = SCREEN_HEIGHT - overlayY;
+
+    const char* noteNames[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+    const char* typeNames[] = {"maj", "min"};
+
+    bool firstDraw = !wasActive;
+    bool selectionChanged = (selectedIdx != lastSelectedIdx);
+
+    // Redraw entire overlay on first draw or when state was cleared
+    if (firstDraw) {
+        display->fillRect(overlayX, overlayY, overlayW, overlayH, COLOR_BG);
+        display->drawText(overlayX + 6, overlayY + 4, "chord library", COLOR_DIM, FONT_SMALL);
+    }
+
+    // Grid layout: 3 columns x 4 rows
+    const uint8_t cols = 3;
+    const uint8_t rows = 4;
+    int16_t cellGap = 4;
+    int16_t cellW = (overlayW - (cols + 1) * cellGap) / cols;
+    int16_t cellH = 26;
+    int16_t startY = overlayY + 18;
+
+    auto drawCell = [&](uint8_t idx, bool selected) {
+        uint8_t col = idx % cols;
+        uint8_t row = idx / cols;
+        int16_t cellX = overlayX + cellGap + col * (cellW + cellGap);
+        int16_t cellY = startY + row * (cellH + cellGap);
+        uint16_t bg = selected ? COLOR_ACCENT : 0x1082;
+        display->fillRoundRect(cellX, cellY, cellW, cellH, 5, bg);
+
+        char label[8];
+        snprintf(label, sizeof(label), "%s %s", noteNames[chordLibrary[idx].root], typeNames[chordLibrary[idx].type]);
+        int16_t bx, by; uint16_t bw, bh;
+        display->getTextBounds(label, 0, 0, &bx, &by, &bw, &bh, FONT_SMALL);
+        int16_t textX = cellX + (cellW - bw) / 2 - bx;
+        int16_t textY = cellY + (cellH - bh) / 2 - by;
+        display->drawText(textX, textY, label, COLOR_BG, FONT_SMALL);
+    };
+
+    if (firstDraw) {
+        for (uint8_t i = 0; i < 12; i++) {
+            drawCell(i, i == selectedIdx);
+        }
+    } else if (selectionChanged) {
+        if (lastSelectedIdx < 12) {
+            drawCell(lastSelectedIdx, false);
+        }
+        drawCell(selectedIdx, true);
+    }
+
+    scriptSlots[slot].lastChordListActive = active;
+    scriptSlots[slot].lastChordListSelectedIdx = selectedIdx;
+}
+
+void UI::openBeatCountPicker(uint8_t slot, uint8_t initialBeats) {
+    if (slot >= MAX_SCRIPTS) return;
+    
+    scriptSlots[slot].beatCountPickerActive = true;
+    scriptSlots[slot].lastBeatCountPickerActive = false; // Force draw
+    
+    if (initialBeats < 1) initialBeats = 1;
+    if (initialBeats > 32) initialBeats = 32;
+    scriptSlots[slot].beatCountSelection = initialBeats;
+    scriptSlots[slot].lastBeatCountSelection = 255; // Force first draw
+}
+
+void UI::navigateBeatCountPicker(uint8_t slot, int8_t delta) {
+    if (slot >= MAX_SCRIPTS) return;
+    if (!scriptSlots[slot].beatCountPickerActive) return;
+    
+    int16_t newCount = (int16_t)scriptSlots[slot].beatCountSelection + delta;
+    if (newCount < 1) newCount = 32;  // Wrap around
+    if (newCount > 32) newCount = 1;
+    scriptSlots[slot].beatCountSelection = (uint8_t)newCount;
+}
+
+uint8_t UI::confirmBeatCount(uint8_t slot) {
+    if (slot >= MAX_SCRIPTS) return 0;
+    if (!scriptSlots[slot].beatCountPickerActive) return 0;
+    
+    uint8_t targetSlot = scriptSlots[slot].chordListTargetSlot;
+    uint8_t beatCount = scriptSlots[slot].beatCountSelection;
+    
+    // Apply beat count to the chord
+    if (targetSlot < MAX_CHORD_SLOTS) {
+        scriptSlots[slot].chordBeats[targetSlot] = beatCount;
+        scriptSlots[slot].lastChordBeats[targetSlot] = 255;  // Force redraw
+    }
+    
+    // Close picker and force UI redraw
+    scriptSlots[slot].beatCountPickerActive = false;
+    scriptSlots[slot].lastBeatCountPickerActive = true;
+    // Force full redraw of chord strip and selection after overlay
+    scriptSlots[slot].lastChordCount = 255;
+    scriptSlots[slot].lastSelectedChordSlot = 255;
+    scriptSlots[slot].lastCurrentChordSlot = 255;
+    scriptSlots[slot].lastChordBeatCounter = 255;
+    
+    return beatCount;
+}
+
+void UI::drawBeatCountPickerOverlay(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h) {
+    if (!display || slot >= MAX_SCRIPTS) return;
+    
+    bool active = scriptSlots[slot].beatCountPickerActive;
+    bool wasActive = scriptSlots[slot].lastBeatCountPickerActive;
+    uint8_t selectedCount = scriptSlots[slot].beatCountSelection;
+    uint8_t lastSelectedCount = scriptSlots[slot].lastBeatCountSelection;
+    
+    // If overlay just closed, force base UI redraw next frame (do not clear here or we wipe the base)
+    if (!active && wasActive) {
+        scriptSlots[slot].lastBeatCountPickerActive = false;
+        scriptSlots[slot].lastCurrentChordSlot = 255;
+        scriptSlots[slot].lastChordBeatCounter = 255;
+        scriptSlots[slot].lastSelectedChordSlot = 255;
+        scriptSlots[slot].lastChordCount = 255;
+        return;
+    }
+    
+    // If not active and wasn't active, skip
+    if (!active) return;
+    
+    // Overlay geometry
+    int16_t overlayX = x + 20;
+    int16_t overlayW = w - 40;
+    int16_t overlayY = y + 30;
+    int16_t overlayH = h - 60;
+    
+    bool firstDraw = !wasActive;
+    
+    if (firstDraw) {
+        display->fillRect(overlayX, overlayY, overlayW, overlayH, 0x1082);
+        display->drawRect(overlayX, overlayY, overlayW, overlayH, COLOR_ACCENT);
+        display->drawText(overlayX + 10, overlayY + 5, "steps per chord", COLOR_DIM, FONT_SMALL);
+    }
+    
+    // Draw big beat count in the center
+    char beatStr[4];
+    snprintf(beatStr, sizeof(beatStr), "%d", selectedCount);
+    
+    int16_t bx, by; uint16_t bw, bh;
+    display->getTextBounds(beatStr, 0, 0, &bx, &by, &bw, &bh, FONT_LARGE);
+    int16_t textX = overlayX + (overlayW - bw) / 2 - bx;
+    int16_t textY = overlayY + (overlayH / 2 - 20);
+    
+    // Clear and redraw number if changed or on first draw
+    if (selectedCount != lastSelectedCount || firstDraw) {
+        display->fillRect(overlayX + 5, overlayY + 25, overlayW - 10, 60, 0x1082);
+        display->drawText(textX, textY, beatStr, COLOR_ACCENT, FONT_LARGE);
+        scriptSlots[slot].lastBeatCountSelection = selectedCount;
+    }
+    
+    // Draw navigation hint
+    display->drawText(overlayX + 10, overlayY + overlayH - 20, "turn to adjust, OK to confirm", COLOR_DIM, FONT_SMALL);
+
+    scriptSlots[slot].lastBeatCountPickerActive = active;
+}
 
 void UI::rotateCarouselWithAnimation(uint8_t slot, int8_t delta) {
     if (slot < MAX_SCRIPTS && scriptSlots[slot].carouselActive) {
@@ -2054,5 +2578,93 @@ void UI::drawChordCarousel(uint8_t slot) {
     
     // Draw hint text
     display->drawTextCentered(210, "ENCODER: SELECT | BUTTON: APPLY", COLOR_DIM, FONT_SMALL);
+}
+
+// ============================================================================
+// Global Parameter Methods
+// ============================================================================
+
+void UI::enterGlobalParamEdit(uint8_t slot) {
+    if (slot >= MAX_SCRIPTS) return;
+    scriptSlots[slot].editingGlobalParam = true;
+}
+
+void UI::exitGlobalParamEdit(uint8_t slot, bool save) {
+    if (slot >= MAX_SCRIPTS) return;
+    
+    if (!save) {
+        // Restore previous values - will be synced from script manager on next update
+        scriptSlots[slot].lastGlobalKey = 255;  // Force re-sync
+    }
+    
+    scriptSlots[slot].editingGlobalParam = false;
+}
+
+void UI::adjustGlobalParam(uint8_t slot, int8_t delta) {
+    if (slot >= MAX_SCRIPTS || !scriptSlots[slot].editingGlobalParam) return;
+    
+    uint8_t param = scriptSlots[slot].selectedGlobalParam;
+    
+    switch (param) {
+        case 0: // Key
+            {
+                int16_t newKey = (int16_t)scriptSlots[slot].globalKey + delta;
+                if (newKey < 0) newKey = 11;
+                if (newKey > 11) newKey = 0;
+                scriptSlots[slot].globalKey = (uint8_t)newKey;
+            }
+            break;
+            
+        case 1: // Theory Mode
+            {
+                int16_t newMode = (int16_t)scriptSlots[slot].globalTheoryMode + delta;
+                if (newMode < 0) newMode = 4;  // THEORY_ALL
+                if (newMode > 4) newMode = 0;  // THEORY_FUNCTIONAL
+                scriptSlots[slot].globalTheoryMode = (uint8_t)newMode;
+            }
+            break;
+            
+        case 2: // Voice Leading Compactness
+            {
+                float newValue = scriptSlots[slot].globalVoiceLeading + (delta * 0.05f);
+                if (newValue < 0.0f) newValue = 0.0f;
+                if (newValue > 1.0f) newValue = 1.0f;
+                scriptSlots[slot].globalVoiceLeading = newValue;
+            }
+            break;
+            
+        case 3: // Energy
+            {
+                float newValue = scriptSlots[slot].globalEnergy + (delta * 0.05f);
+                if (newValue < 0.0f) newValue = 0.0f;
+                if (newValue > 1.0f) newValue = 1.0f;
+                scriptSlots[slot].globalEnergy = newValue;
+            }
+            break;
+    }
+}
+
+void UI::syncGlobalsFromScript(uint8_t slot, const GlobalParameters& globals) {
+    if (slot >= MAX_SCRIPTS) return;
+    
+    // Detect actual changes in the source script
+    uint8_t newKey = (uint8_t)globals.key;
+    uint8_t newTheoryMode = (uint8_t)globals.theoryMode;
+    float newVoiceLeading = globals.voiceLeadingCompactness;
+    float newEnergy = globals.energy;
+    
+    // Only update if something actually changed, preserving last* tracking
+    if (newKey != scriptSlots[slot].globalKey) {
+        scriptSlots[slot].globalKey = newKey;
+    }
+    if (newTheoryMode != scriptSlots[slot].globalTheoryMode) {
+        scriptSlots[slot].globalTheoryMode = newTheoryMode;
+    }
+    if (newVoiceLeading != scriptSlots[slot].globalVoiceLeading) {
+        scriptSlots[slot].globalVoiceLeading = newVoiceLeading;
+    }
+    if (newEnergy != scriptSlots[slot].globalEnergy) {
+        scriptSlots[slot].globalEnergy = newEnergy;
+    }
 }
 

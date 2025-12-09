@@ -12,6 +12,7 @@
 #include "display.h"
 
 class ScriptManager;  // Forward declaration
+struct GlobalParameters;  // Forward declaration for chord sequencer globals
 
 // Menu item structure
 struct MenuItem {
@@ -60,16 +61,18 @@ struct ScriptSlot {
     uint8_t lastSeqDirection;
     uint8_t lastSeqCurrentBeat;
     // ChordSequencer specific
-    uint8_t chordRoots[4];       // Root notes (0-11) for 4 chords
-    uint8_t chordTypes[4];       // 0=major, 1=minor
-    uint8_t chordBeats[4];       // Beats per chord (1-32)
-    uint8_t currentChordSlot;    // Current playing chord (0-3)
+    uint8_t chordRoots[MAX_CHORD_SLOTS];       // Root notes (0-11)
+    uint8_t chordTypes[MAX_CHORD_SLOTS];       // 0=major, 1=minor
+    uint8_t chordBeats[MAX_CHORD_SLOTS];       // Beats per chord (1-32)
+    uint8_t currentChordSlot;    // Current playing chord (0-(count-1))
     uint8_t chordBeatCounter;    // Beat within current chord
-    uint8_t selectedChordSlot;   // Currently selected chord via encoder (0-3)
+    uint8_t selectedChordSlot;   // Currently selected chord via encoder (0-count)
+    uint8_t chordCount;          // Number of active chords (max MAX_CHORD_SLOTS)
+    uint8_t lastChordCount;      // Track changes for UI redraws
     // Previous state tracking for chord sequencer
-    uint8_t lastChordRoots[4];
-    uint8_t lastChordTypes[4];
-    uint8_t lastChordBeats[4];
+    uint8_t lastChordRoots[MAX_CHORD_SLOTS];
+    uint8_t lastChordTypes[MAX_CHORD_SLOTS];
+    uint8_t lastChordBeats[MAX_CHORD_SLOTS];
     uint8_t lastCurrentChordSlot;
     uint8_t lastChordBeatCounter;
     uint8_t lastSelectedChordSlot;
@@ -82,6 +85,34 @@ struct ScriptSlot {
     // Animation state for smooth scrolling
     int16_t carouselScrollOffset;  // Scroll animation offset in pixels
     int16_t lastCarouselScrollOffset;  // Last frame's scroll offset for smart redraw
+
+    // Full-screen chord list overlay
+    bool chordListActive;        // true when list overlay is open
+    uint8_t chordListSelectedIdx; // selection within chord list
+    uint8_t chordListTargetSlot;  // which slot to write when selecting
+    bool lastChordListActive;
+    uint8_t lastChordListSelectedIdx;
+    
+    // Beat count picker overlay
+    bool beatCountPickerActive;  // true when beat count overlay is open
+    uint8_t beatCountSelection;  // selected beat count (1-32)
+    uint8_t lastBeatCountSelection;
+    bool lastBeatCountPickerActive;
+    
+    // Global parameters (ChordSequencer)
+    uint8_t selectedGlobalParam;     // 0-3: Key, Theory, Compactness, Energy; 255=none
+    bool editingGlobalParam;         // true when editing a global param value
+    uint8_t globalKey;               // Current key (0-11)
+    uint8_t globalTheoryMode;        // Current theory mode (0-4)
+    float globalVoiceLeading;        // Voice leading compactness (0.0-1.0)
+    float globalEnergy;              // Energy level (0.0-1.0)
+    // Previous state for change detection
+    uint8_t lastSelectedGlobalParam;
+    bool lastEditingGlobalParam;
+    uint8_t lastGlobalKey;
+    uint8_t lastGlobalTheoryMode;
+    float lastGlobalVoiceLeading;
+    float lastGlobalEnergy;
 };
 
 class UI {
@@ -159,9 +190,20 @@ public:
     void setToggleDirection(uint8_t slot, uint8_t step, uint8_t dir) { if (slot < MAX_SCRIPTS && step < 8) scriptSlots[slot].seqToggleDirection[step] = dir; }
     
     // ChordSequencer
-    void updateChordSequencer(uint8_t slot, uint8_t chordRoots[4], uint8_t chordTypes[4], uint8_t chordBeats[4], uint8_t currentChordSlot, uint8_t beatCounter);
+    void updateChordSequencer(uint8_t slot, uint8_t chordRoots[MAX_CHORD_SLOTS], uint8_t chordTypes[MAX_CHORD_SLOTS], uint8_t chordBeats[MAX_CHORD_SLOTS], uint8_t currentChordSlot, uint8_t beatCounter, uint8_t chordCount);
+    void updateChordSequencerGlobals(uint8_t slot, const GlobalParameters& globals);
     uint8_t getSelectedChordSlot(uint8_t slot) { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].selectedChordSlot : 0; }
-    void setSelectedChordSlot(uint8_t slot, uint8_t chordSlot) { if (slot < MAX_SCRIPTS && chordSlot < 4) scriptSlots[slot].selectedChordSlot = chordSlot; }
+    uint8_t getChordCount(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].chordCount : 0; }
+    void setSelectedChordSlot(uint8_t slot, uint8_t chordSlot) {
+        if (slot < MAX_SCRIPTS && chordSlot <= MAX_CHORD_SLOTS) {
+            // Allow selecting the trailing plus box (index == chordCount) as an add action
+            uint8_t maxSelectable = scriptSlots[slot].chordCount + 1;  // chords + plus box
+            if (maxSelectable > MAX_CHORD_SLOTS + 1) maxSelectable = MAX_CHORD_SLOTS + 1;  // Safety cap
+            if (chordSlot < maxSelectable) {
+                scriptSlots[slot].selectedChordSlot = chordSlot;
+            }
+        }
+    }
     
     // Carousel management
     bool isCarouselActive(uint8_t slot) { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].carouselActive : false; }
@@ -178,6 +220,37 @@ public:
             if (type) *type = chordLibrary[idx].type;
         }
     }
+
+    // Chord list overlay (full-screen)
+    bool isChordListActive(uint8_t slot) { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].chordListActive : false; }
+    void openChordList(uint8_t slot, uint8_t targetSlot);
+    void navigateChordList(uint8_t slot, int8_t delta);
+    uint8_t selectFromChordList(uint8_t slot);
+    uint8_t getChordRoot(uint8_t slot, uint8_t idx) const { return (slot < MAX_SCRIPTS && idx < MAX_CHORD_SLOTS) ? scriptSlots[slot].chordRoots[idx] : 0; }
+    uint8_t getChordType(uint8_t slot, uint8_t idx) const { return (slot < MAX_SCRIPTS && idx < MAX_CHORD_SLOTS) ? scriptSlots[slot].chordTypes[idx] : 0; }
+    uint8_t getChordListTarget(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].chordListTargetSlot : 0; }
+    void setChordListTarget(uint8_t slot, uint8_t targetSlot) { if (slot < MAX_SCRIPTS) scriptSlots[slot].chordListTargetSlot = targetSlot; }
+    void drawChordListOverlay(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
+    
+    // Beat count picker overlay
+    bool isBeatCountPickerActive(uint8_t slot) { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].beatCountPickerActive : false; }
+    void openBeatCountPicker(uint8_t slot, uint8_t initialBeats);
+    void navigateBeatCountPicker(uint8_t slot, int8_t delta);
+    uint8_t confirmBeatCount(uint8_t slot);
+    void drawBeatCountPickerOverlay(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
+    
+    // Global parameters (ChordSequencer)
+    uint8_t getSelectedGlobalParam(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].selectedGlobalParam : 255; }
+    void setSelectedGlobalParam(uint8_t slot, uint8_t param) { if (slot < MAX_SCRIPTS) scriptSlots[slot].selectedGlobalParam = param; }
+    bool isEditingGlobalParam(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].editingGlobalParam : false; }
+    uint8_t getGlobalKey(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].globalKey : 0; }
+    uint8_t getGlobalTheoryMode(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].globalTheoryMode : 0; }
+    float getGlobalVoiceLeading(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].globalVoiceLeading : 0.5f; }
+    float getGlobalEnergy(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].globalEnergy : 0.5f; }
+    void enterGlobalParamEdit(uint8_t slot);
+    void exitGlobalParamEdit(uint8_t slot, bool save);
+    void adjustGlobalParam(uint8_t slot, int8_t delta);
+    void syncGlobalsFromScript(uint8_t slot, const GlobalParameters& globals);
     
 private:
     Display* display;
@@ -207,6 +280,7 @@ private:
     void drawSequencerDials(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
     void drawPoliquencerSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
     void drawChordSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
+    void drawGlobalParameterBoxes(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
     void drawChordSequencerCarouselOverlay(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h);
     void drawChordCarousel(uint8_t slot);
     void drawHeader(const char* title);

@@ -91,8 +91,14 @@ public:
     void setPoliquencerStepValue(uint8_t slot, uint8_t step, int8_t value);
     
     // ChordSequencer access
-    bool getChordSequencerData(uint8_t slot, uint8_t chordRoots[4], uint8_t chordTypes[4], uint8_t chordBeats[4], uint8_t* currentChordSlot, uint8_t* beatCounter);
+    bool getChordSequencerData(uint8_t slot, uint8_t chordRoots[MAX_CHORD_SLOTS], uint8_t chordTypes[MAX_CHORD_SLOTS], uint8_t chordBeats[MAX_CHORD_SLOTS], uint8_t* currentChordSlot, uint8_t* beatCounter, uint8_t* chordCount = nullptr);
     void setChordSequencerChord(uint8_t slot, uint8_t chordSlot, uint8_t rootNote, uint8_t chordType);
+    void setChordSequencerChordBeats(uint8_t slot, uint8_t chordSlot, uint8_t beats);
+    bool getChordSequencerGlobals(uint8_t slot, GlobalParameters* globals);
+    void setChordSequencerKey(uint8_t slot, MusicalKey key);
+    void setChordSequencerTheoryMode(uint8_t slot, TheoryMode mode);
+    void setChordSequencerVoiceLeading(uint8_t slot, float compactness);
+    void setChordSequencerEnergy(uint8_t slot, float energy);
     void setPoliquencerStepDuration(uint8_t slot, uint8_t step, uint8_t duration);
     void setPoliquencerStepGateMode(uint8_t slot, uint8_t step, uint8_t gateMode);
     void setPoliquencerDirection(uint8_t slot, uint8_t direction);

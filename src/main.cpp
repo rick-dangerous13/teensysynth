@@ -266,13 +266,20 @@ void handleScriptSelectState() {
                 }
                 
                 // Update chord sequencer data if it's a chord sequencer
-                uint8_t chordRoots[4];
-                uint8_t chordTypes[4];
-                uint8_t chordBeats[4];
+                uint8_t chordRoots[MAX_CHORD_SLOTS];
+                uint8_t chordTypes[MAX_CHORD_SLOTS];
+                uint8_t chordBeats[MAX_CHORD_SLOTS];
                 uint8_t currentChordSlot;
                 uint8_t beatCounter;
-                if (scriptManager.getChordSequencerData(i, chordRoots, chordTypes, chordBeats, &currentChordSlot, &beatCounter)) {
-                    ui.updateChordSequencer(i, chordRoots, chordTypes, chordBeats, currentChordSlot, beatCounter);
+                uint8_t chordCount;
+                if (scriptManager.getChordSequencerData(i, chordRoots, chordTypes, chordBeats, &currentChordSlot, &beatCounter, &chordCount)) {
+                    ui.updateChordSequencer(i, chordRoots, chordTypes, chordBeats, currentChordSlot, beatCounter, chordCount);
+                    
+                    // Also update global parameters
+                    GlobalParameters globals;
+                    if (scriptManager.getChordSequencerGlobals(i, &globals)) {
+                        ui.updateChordSequencerGlobals(i, globals);
+                    }
                 }
             }
         }
@@ -353,24 +360,81 @@ void handleScriptSelectState() {
             }
             // Try ChordSequencer
             else {
-                uint8_t chordRoots[4];
-                uint8_t chordTypes[4];
-                uint8_t chordBeats[4];
+                uint8_t chordRoots[MAX_CHORD_SLOTS];
+                uint8_t chordTypes[MAX_CHORD_SLOTS];
+                uint8_t chordBeats[MAX_CHORD_SLOTS];
                 uint8_t currentChordSlot;
                 uint8_t beatCounter;
-                if (scriptManager.getChordSequencerData(0, chordRoots, chordTypes, chordBeats, &currentChordSlot, &beatCounter)) {
-                    // Handle carousel rotation when active
-                    if (ui.isCarouselActive(0)) {
-                        ui.rotateCarouselWithAnimation(0, scrollDelta);
+                uint8_t chordCount;
+                if (scriptManager.getChordSequencerData(0, chordRoots, chordTypes, chordBeats, &currentChordSlot, &beatCounter, &chordCount)) {
+                    if (ui.isBeatCountPickerActive(0)) {
+                        ui.navigateBeatCountPicker(0, scrollDelta);
+                    } else if (ui.isChordListActive(0)) {
+                        ui.navigateChordList(0, scrollDelta);
+                    } else if (ui.isEditingGlobalParam(0)) {
+                        // In global param edit mode - adjust value
+                        ui.adjustGlobalParam(0, scrollDelta);
                     } else {
-                        // Encoder controls chord selection when carousel is closed
+                        // Navigation includes: chords, plus box, and 4 global param boxes
+                        uint8_t chordCountUi = ui.getChordCount(0);
+                        if (chordCountUi > MAX_CHORD_SLOTS) chordCountUi = MAX_CHORD_SLOTS;
+                        
+                        uint8_t chordBoxes = chordCountUi;
+                        uint8_t plusBoxes = (chordCountUi < MAX_CHORD_SLOTS) ? 1 : 0;
+                        uint8_t globalBoxes = 4;
+                        uint8_t totalNavigable = chordBoxes + plusBoxes + globalBoxes;
+                        
+                        // Current selection: chord slot (0..chordCount-1), plus box (chordCount), or global param (via selectedGlobalParam)
+                        uint8_t currentIndex = 0;
                         uint8_t selectedChord = ui.getSelectedChordSlot(0);
-                        if (scrollDelta > 0) {
-                            selectedChord = (selectedChord + 1) % 4;
-                        } else if (scrollDelta < 0) {
-                            selectedChord = (selectedChord == 0) ? 3 : (selectedChord - 1);
+                        uint8_t selectedGlobal = ui.getSelectedGlobalParam(0);
+                        
+                        // Initialize selection if nothing is selected (only on first interaction)
+                        if (selectedChord == 255 && selectedGlobal == 255) {
+                            // Default to plus box (or first global if no plus box available)
+                            if (plusBoxes > 0) {
+                                ui.setSelectedChordSlot(0, chordBoxes);  // Select plus box (index = chordBoxes)
+                                selectedChord = chordBoxes;  // Update local variable
+                            } else {
+                                ui.setSelectedGlobalParam(0, 0);  // Select first global param
+                                selectedGlobal = 0;  // Update local variable
+                            }
                         }
-                        ui.setSelectedChordSlot(0, selectedChord);
+                        
+                        // Determine current index based on what's selected
+                        if (selectedGlobal != 255) {
+                            // Currently on a global param
+                            currentIndex = chordBoxes + plusBoxes + selectedGlobal;
+                        } else {
+                            // Currently on a chord or plus box
+                            currentIndex = selectedChord;
+                        }
+                        
+                        // Navigate
+                        if (scrollDelta > 0) {
+                            currentIndex = (currentIndex + 1) % totalNavigable;
+                        } else if (scrollDelta < 0) {
+                            currentIndex = (currentIndex == 0) ? (totalNavigable - 1) : (currentIndex - 1);
+                        }
+                        
+                        // Update selection based on new index
+                        uint8_t plusBoxIndex = chordBoxes;
+                        uint8_t firstGlobalIndex = chordBoxes + plusBoxes;
+                        
+                        if (currentIndex < chordBoxes) {
+                            // Chord selection
+                            ui.setSelectedChordSlot(0, currentIndex);
+                            ui.setSelectedGlobalParam(0, 255);  // Deselect global
+                        } else if (currentIndex == plusBoxIndex && plusBoxes > 0) {
+                            // Plus box selection
+                            ui.setSelectedChordSlot(0, chordBoxes);
+                            ui.setSelectedGlobalParam(0, 255);  // Deselect global
+                        } else {
+                            // Global param selection
+                            uint8_t globalIdx = currentIndex - firstGlobalIndex;
+                            ui.setSelectedChordSlot(0, 255);  // Deselect chord
+                            ui.setSelectedGlobalParam(0, globalIdx);
+                        }
                     }
                 }
             }
@@ -387,26 +451,82 @@ void handleScriptSelectState() {
         bool dummySteam;
         
         // Check if ChordSequencer is running
-        uint8_t chordRoots[4];
-        uint8_t chordTypes[4];
-        uint8_t chordBeats[4];
+        uint8_t chordRoots[MAX_CHORD_SLOTS];
+        uint8_t chordTypes[MAX_CHORD_SLOTS];
+        uint8_t chordBeats[MAX_CHORD_SLOTS];
         uint8_t currentChordSlot;
         uint8_t beatCounter;
-        if (scriptManager.getChordSequencerData(0, chordRoots, chordTypes, chordBeats, &currentChordSlot, &beatCounter)) {
-            if (ui.isCarouselActive(0)) {
-                // Carousel is open - apply selected chord and close
-                uint8_t selectedChordSlot = ui.getSelectedChordSlot(0);
-                uint8_t newRoot, newType;
-                ui.getCarouselChordInfo(0, &newRoot, &newType);
+        uint8_t chordCount;
+        if (scriptManager.getChordSequencerData(0, chordRoots, chordTypes, chordBeats, &currentChordSlot, &beatCounter, &chordCount)) {
+            if (ui.isBeatCountPickerActive(0)) {
+                // Confirm beat count, close picker, and sync to script manager
+                uint8_t beatCount = ui.confirmBeatCount(0);
+                uint8_t targetSlot = ui.getChordListTarget(0);
+                if (targetSlot < MAX_CHORD_SLOTS) {
+                    scriptManager.setChordSequencerChordBeats(0, targetSlot, beatCount);
+                    
+                    // Move cursor to the newly added/modified chord
+                    ui.setSelectedChordSlot(0, targetSlot);
+                    ui.setSelectedGlobalParam(0, 255);  // Deselect global params
+                }
+            } else if (ui.isChordListActive(0)) {
+                uint8_t appliedSlot = ui.selectFromChordList(0);
+                if (appliedSlot < MAX_CHORD_SLOTS) {
+                    uint8_t newRoot = ui.getChordRoot(0, appliedSlot);
+                    uint8_t newType = ui.getChordType(0, appliedSlot);
+                    scriptManager.setChordSequencerChord(0, appliedSlot, newRoot, newType);
+                    
+                    // After selecting a chord from the library, get its current beat count
+                    // If it's a new chord being added, default to 8 beats
+                    uint8_t initialBeats = 8;
+                    
+                    // Check if this slot already had a chord with beats set
+                    uint8_t chordRoots[MAX_CHORD_SLOTS];
+                    uint8_t chordTypes[MAX_CHORD_SLOTS];
+                    uint8_t chordBeats[MAX_CHORD_SLOTS];
+                    uint8_t currentChordSlot;
+                    uint8_t beatCounter;
+                    uint8_t chordCount;
+                    if (scriptManager.getChordSequencerData(0, chordRoots, chordTypes, chordBeats, &currentChordSlot, &beatCounter, &chordCount)) {
+                        if (appliedSlot < chordCount) {
+                            initialBeats = chordBeats[appliedSlot];
+                        }
+                    }
+                    
+                    // Open beat count picker with appropriate default
+                    ui.openBeatCountPicker(0, initialBeats);
+                    ui.setChordListTarget(0, appliedSlot);  // Set target for beat confirmation
+                }
+            } else if (ui.isEditingGlobalParam(0)) {
+                // Exit global param edit mode and save changes
+                uint8_t selectedGlobal = ui.getSelectedGlobalParam(0);
+                ui.exitGlobalParamEdit(0, true);
                 
-                // Update script manager with new chord
-                scriptManager.setChordSequencerChord(0, selectedChordSlot, newRoot, newType);
-                
-                // Update UI and close
-                ui.selectFromCarousel(0);
+                // Sync changed values to script manager
+                GlobalParameters currentGlobals;
+                if (scriptManager.getChordSequencerGlobals(0, &currentGlobals)) {
+                    if (selectedGlobal == 0) {
+                        scriptManager.setChordSequencerKey(0, (MusicalKey)ui.getGlobalKey(0));
+                    } else if (selectedGlobal == 1) {
+                        scriptManager.setChordSequencerTheoryMode(0, (TheoryMode)ui.getGlobalTheoryMode(0));
+                    } else if (selectedGlobal == 2) {
+                        scriptManager.setChordSequencerVoiceLeading(0, ui.getGlobalVoiceLeading(0));
+                    } else if (selectedGlobal == 3) {
+                        scriptManager.setChordSequencerEnergy(0, ui.getGlobalEnergy(0));
+                    }
+                }
             } else {
-                // Carousel is closed - open it to select a replacement chord
-                ui.toggleCarousel(0);
+                // Check if a global param is selected
+                uint8_t selectedGlobal = ui.getSelectedGlobalParam(0);
+                
+                if (selectedGlobal != 255) {
+                    // Enter global param edit mode
+                    ui.enterGlobalParamEdit(0);
+                } else {
+                    // Chord or plus box selected - open chord list to select/change chord
+                    uint8_t targetSlot = ui.getSelectedChordSlot(0);
+                    ui.openChordList(0, targetSlot);
+                }
             }
         }
     }
@@ -514,9 +634,9 @@ void handleScriptSelectState() {
             uint8_t dummyGateModes[8];
             uint8_t dummyDirection;
             bool dummySteam;
-            uint8_t chordRoots[4];
-            uint8_t chordTypes[4];
-            uint8_t chordBeats[4];
+            uint8_t chordRoots[MAX_CHORD_SLOTS];
+            uint8_t chordTypes[MAX_CHORD_SLOTS];
+            uint8_t chordBeats[MAX_CHORD_SLOTS];
             
             // LFO: cycle edit parameter
             uint8_t waveType;
@@ -539,7 +659,7 @@ void handleScriptSelectState() {
                 return;
             }
             // ChordSequencer: button is already handled above, don't process further
-            else if (scriptManager.getChordSequencerData(0, chordRoots, chordTypes, chordBeats, &dummy, &dummy)) {
+            else if (scriptManager.getChordSequencerData(0, chordRoots, chordTypes, chordBeats, &dummy, &dummy, nullptr)) {
                 return;  // ChordSequencer button handled already, prevent fallthrough
             }
         }
@@ -644,7 +764,28 @@ void handleScriptRunningState() {
         }
     }
     
-    // Handle Back button
+    // Handle Back button for ChordSequencer
+    if (input.isButtonPressed(BTN_BACK) && scriptManager.isScriptRunning(0)) {
+        // Check for chord sequencer overlays or edit mode
+        if (ui.isEditingGlobalParam(0)) {
+            // Cancel global param editing without saving
+            ui.exitGlobalParamEdit(0, false);
+        } else if (ui.isBeatCountPickerActive(0)) {
+            // Close beat picker without saving
+            ui.confirmBeatCount(0);  // This closes the picker
+        } else if (ui.isChordListActive(0)) {
+            // Close chord list without selecting
+            ui.selectFromChordList(0);  // Returns to main view
+        } else {
+            // No overlay active - go back to main menu
+            currentState = AppState::MAIN_MENU;
+            ui.resetMenuTracking();
+            ui.showMainMenu();
+        }
+        return;  // Handled
+    }
+    
+    // Handle Back button - always go back to main menu
     if (input.isButtonPressed(BTN_BACK)) {
         currentState = AppState::MAIN_MENU;
         ui.resetMenuTracking();  // Reset for new screen

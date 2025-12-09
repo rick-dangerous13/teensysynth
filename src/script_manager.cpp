@@ -560,16 +560,17 @@ void ScriptManager::setPoliquencerDirection(uint8_t slot, uint8_t direction) {
 
 // ========== CHORD SEQUENCER METHODS ==========
 
-bool ScriptManager::getChordSequencerData(uint8_t slot, uint8_t chordRoots[4], uint8_t chordTypes[4], uint8_t chordBeats[4], uint8_t* currentChordSlot, uint8_t* beatCounter) {
+bool ScriptManager::getChordSequencerData(uint8_t slot, uint8_t chordRoots[MAX_CHORD_SLOTS], uint8_t chordTypes[MAX_CHORD_SLOTS], uint8_t chordBeats[MAX_CHORD_SLOTS], uint8_t* currentChordSlot, uint8_t* beatCounter, uint8_t* chordCount) {
     if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
         return false;
     }
     
     if (currentChordSlot) *currentChordSlot = chordSequencerInstances[slot]->getCurrentChordSlot();
     if (beatCounter) *beatCounter = chordSequencerInstances[slot]->getBeatCounter();
+    if (chordCount) *chordCount = chordSequencerInstances[slot]->getChordCount();
     
     if (chordRoots && chordTypes && chordBeats) {
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < MAX_CHORD_SLOTS; i++) {
             uint8_t root;
             ChordType type;
             chordSequencerInstances[slot]->getChord(i, &root, &type);
@@ -583,11 +584,60 @@ bool ScriptManager::getChordSequencerData(uint8_t slot, uint8_t chordRoots[4], u
 }
 
 void ScriptManager::setChordSequencerChord(uint8_t slot, uint8_t chordSlot, uint8_t rootNote, uint8_t chordType) {
-    if (slot >= MAX_SCRIPTS || chordSlot >= 4 || chordSequencerInstances[slot] == nullptr) {
+    if (slot >= MAX_SCRIPTS || chordSlot >= MAX_CHORD_SLOTS || chordSequencerInstances[slot] == nullptr) {
         return;
     }
     
     ChordType type = (chordType == 0) ? CHORD_MAJOR : CHORD_MINOR;
     chordSequencerInstances[slot]->setChord(chordSlot, rootNote, type);
+}
+
+void ScriptManager::setChordSequencerChordBeats(uint8_t slot, uint8_t chordSlot, uint8_t beats) {
+    if (slot >= MAX_SCRIPTS || chordSlot >= MAX_CHORD_SLOTS || chordSequencerInstances[slot] == nullptr) {
+        return;
+    }
+    
+    chordSequencerInstances[slot]->setChordBeats(chordSlot, beats);
+}
+
+bool ScriptManager::getChordSequencerGlobals(uint8_t slot, GlobalParameters* globals) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr || globals == nullptr) {
+        return false;
+    }
+    
+    *globals = chordSequencerInstances[slot]->getGlobalParameters();
+    return true;
+}
+
+void ScriptManager::setChordSequencerKey(uint8_t slot, MusicalKey key) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return;
+    }
+    
+    chordSequencerInstances[slot]->setKey(key);
+}
+
+void ScriptManager::setChordSequencerTheoryMode(uint8_t slot, TheoryMode mode) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return;
+    }
+    
+    chordSequencerInstances[slot]->setTheoryMode(mode);
+}
+
+void ScriptManager::setChordSequencerVoiceLeading(uint8_t slot, float compactness) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return;
+    }
+    
+    chordSequencerInstances[slot]->setVoiceLeadingCompactness(compactness);
+}
+
+void ScriptManager::setChordSequencerEnergy(uint8_t slot, float energy) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return;
+    }
+    
+    chordSequencerInstances[slot]->setEnergy(energy);
 }
 

@@ -21,6 +21,29 @@ enum ChordType {
     CHORD_MINOR = 1
 };
 
+// Musical key enumeration
+enum MusicalKey {
+    MKEY_C = 0, MKEY_CS, MKEY_D, MKEY_DS, MKEY_E, MKEY_F,
+    MKEY_FS, MKEY_G, MKEY_GS, MKEY_A, MKEY_AS, MKEY_B
+};
+
+// Theory mode for chord suggestions
+enum TheoryMode {
+    THEORY_FUNCTIONAL = 0,  // Function-based harmony (I, IV, V)
+    THEORY_DIATONIC,        // Diatonic scale-based
+    THEORY_MODAL,           // Modal harmony
+    THEORY_CHROMATIC,       // Chromatic relationships
+    THEORY_ALL              // All chords available
+};
+
+// Global musical parameters
+struct GlobalParameters {
+    MusicalKey key;                    // Current key (C, C#, D, etc.)
+    TheoryMode theoryMode;             // Theory mode for suggestions
+    float voiceLeadingCompactness;     // 0.0-1.0: prefer minimal voice movement
+    float energy;                      // 0.0-1.0: harmonic energy/tension level
+};
+
 // Chord definition
 struct Chord {
     uint8_t rootNote;      // 0-11 (C=0, C#=1, D=2, etc.)
@@ -61,6 +84,14 @@ public:
     // Get current state
     uint8_t getCurrentChordSlot() const { return currentChordSlot; }
     uint8_t getBeatCounter() const { return beatCounter; }
+    uint8_t getChordCount() const { return chordCount; }
+    
+    // Global parameter accessors
+    const GlobalParameters& getGlobalParameters() const { return globals; }
+    void setKey(MusicalKey key) { globals.key = key; }
+    void setTheoryMode(TheoryMode mode) { globals.theoryMode = mode; }
+    void setVoiceLeadingCompactness(float value) { globals.voiceLeadingCompactness = constrain(value, 0.0f, 1.0f); }
+    void setEnergy(float value) { globals.energy = constrain(value, 0.0f, 1.0f); }
     
     // Get current scale info (for Poliquencer integration)
     void getCurrentScale(ScaleInfo* scale);
@@ -69,12 +100,16 @@ public:
     void getDisplayText(char* buffer, size_t bufferSize);
     
 private:
-    // Chord progression (4 chords)
-    Chord chords[4];
-    uint8_t chordBeats[4];         // Beats per chord (1-32)
+    // Global musical parameters
+    GlobalParameters globals;
+    
+    // Chord progression (up to MAX_CHORD_SLOTS chords)
+    Chord chords[MAX_CHORD_SLOTS];
+    uint8_t chordBeats[MAX_CHORD_SLOTS];   // Beats per chord (1-32)
+    uint8_t chordCount;                    // Active chord slots
     
     // Timing
-    uint8_t currentChordSlot;      // 0-3
+    uint8_t currentChordSlot;      // 0-(chordCount-1)
     uint8_t beatCounter;           // 0 to current chord's beat count
     unsigned long lastBeatMicros;
     unsigned long beatDurationMicros;
