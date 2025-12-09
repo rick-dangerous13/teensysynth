@@ -82,26 +82,42 @@
 //   T_CLK  -> Pin 13 (SCK - shared with display)
 
 // ============================================================================
-// MCP4725 DAC Configuration (I2C CV Outputs)
 // ============================================================================
-// Using 2x MCP4725 12-bit I2C DACs for CV outputs
-// MCP4725: 12-bit resolution, single channel, I2C interface
-// Address: 0x60 (A0=GND), 0x61 (A0=VDD) or 0x62, 0x63 with different addressing
+// MCP4725 DAC Configuration (I2C CV Outputs with TCA9548A Multiplexer)
+// ============================================================================
+// Using 2x MCP4725 12-bit I2C DACs with TCA9548A I2C multiplexer
+// This allows both DACs to use the same I2C address (0x60) on different channels
+//
+// HARDWARE SETUP (TCA9548A Multiplexer Required):
+// Your MCP4725 boards have NO address pins (A0/A1/A2), so we use a multiplexer.
+// 
+// Wiring:
+//   Teensy Pin 18 (SDA) ──→ TCA9548A SDA
+//   Teensy Pin 19 (SCL) ──→ TCA9548A SCL
+//   Teensy 5V ──→ TCA9548A VIN
+//   Teensy GND ──→ TCA9548A GND, A0, A1, A2
+// 
+//   TCA9548A Channel 0 (SD0/SC0) ──→ MCP4725 #1 SDA/SCL (Pitch CV)
+//   TCA9548A Channel 1 (SD1/SC1) ──→ MCP4725 #2 SDA/SCL (Gate CV)
+// 
+//   Each MCP4725: VCC→5V, GND→GND, OUT→Synth CV Input
+//
+// See MCP4725_DUAL_DAC_WITH_MULTIPLEXER.md for detailed wiring!
 
-#define MCP4725_ADDR_1  0x60   // First MCP4725 address (CV Out 1)
-#define MCP4725_ADDR_2  0x61   // Second MCP4725 address (CV Out 2)
+// TCA9548A I2C Multiplexer
+#define TCA9548A_ADDR         0x70  // Multiplexer address (A0=GND, A1=GND, A2=GND)
 
-// MCP4725 Wiring (per chip):
-//   VCC -> Teensy 5V (for full 0-5V output range)
-//   GND -> Teensy GND
-//   SDA -> Teensy Pin 18 (I2C SDA)
-//   SCL -> Teensy Pin 19 (I2C SCL)
+// MCP4725 DAC Addresses and Multiplexer Channels
+#define MCP4725_ADDR_1        0x60  // Pitch CV (on multiplexer channel 0)
+#define MCP4725_ADDR_2        0x60  // Gate CV (on multiplexer channel 1 - same address, different channel!)
+#define MCP4725_CHANNEL_1     0     // Channel 0 for Pitch CV
+#define MCP4725_CHANNEL_2     1     // Channel 1 for Gate CV
 
 // DAC specifications
-#define DAC_MAX_VALUE    4095      // 12-bit DAC (0-4095)
-#define DAC_MAX_VOLTAGE  5.0f      // Maximum output voltage
-#define GATE_HIGH_VOLTAGE 5.0f     // Gate high voltage
-#define GATE_LOW_VOLTAGE 0.0f      // Gate low voltage
+#define DAC_MAX_VALUE         4095      // 12-bit DAC (0-4095)
+#define DAC_MAX_VOLTAGE       5.0f      // Maximum output voltage
+#define GATE_HIGH_VOLTAGE     5.0f      // Gate high voltage
+#define GATE_LOW_VOLTAGE      0.0f      // Gate low voltage
 
 // ============================================================================
 // Script Manager Configuration

@@ -1028,16 +1028,27 @@ void UI::drawChordSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16
                 // Draw rounded rectangle for chord
                 display->fillRoundRect(beatX, chartY, boxWidth, chartH, 6, boxColor);
                 
-                // Draw chord label (root + type) centered in box
-                char label[8];
-                snprintf(label, sizeof(label), "%s%s", noteNames[scriptSlots[slot].chordRoots[i]], 
-                         typeNames[scriptSlots[slot].chordTypes[i]]);
+                // Draw chord label with larger root note and smaller degree
+                const char* rootNote = noteNames[scriptSlots[slot].chordRoots[i]];
+                const char* degreeStr = typeNames[scriptSlots[slot].chordTypes[i]];
                 
+                // Measure both parts with their respective font sizes
                 int16_t bx, by; uint16_t bw, bh;
-                display->getTextBounds(label, 0, 0, &bx, &by, &bw, &bh, FONT_SMALL);
-                int16_t labelX = beatX + (boxWidth - bw) / 2 - bx;
-                int16_t labelY = chartY + (chartH - bh) / 2 - by;
-                display->drawText(labelX, labelY, label, COLOR_BG, FONT_SMALL);
+                display->getTextBounds(rootNote, 0, 0, &bx, &by, &bw, &bh, FONT_MEDIUM);
+                uint16_t rootW = bw, rootH = bh;
+                
+                display->getTextBounds(degreeStr, 0, 0, &bx, &by, &bw, &bh, FONT_SMALL);
+                uint16_t degreeW = bw, degreeH = bh;
+                
+                // Position: root note centered horizontally, degree below it
+                int16_t rootX = beatX + (boxWidth - rootW) / 2 - bx;
+                int16_t rootY = chartY + (chartH / 2) - rootH - 2;
+                
+                int16_t degreeX = beatX + (boxWidth - degreeW) / 2 - bx;
+                int16_t degreeY = rootY + rootH + 2;
+                
+                display->drawText(rootX, rootY, rootNote, COLOR_BG, FONT_MEDIUM);
+                display->drawText(degreeX, degreeY, degreeStr, COLOR_BG, FONT_SMALL);
                 
                 beatX += boxWidth;
             }
@@ -1178,15 +1189,27 @@ void UI::drawChordSequencer(uint8_t slot, int16_t x, int16_t y, int16_t w, int16
                         uint16_t boxColor = isSelected ? COLOR_ACCENT : 0x5D9F;
                         display->fillRoundRect(beatX, chartY, boxWidth, chartH, 6, boxColor);
                         
-                        char label[8];
-                        snprintf(label, sizeof(label), "%s%s", noteNames[scriptSlots[slot].chordRoots[i]], 
-                                 typeNames[scriptSlots[slot].chordTypes[i]]);
+                        // Draw chord label with larger root note and smaller degree (matching initial draw)
+                        const char* rootNote = noteNames[scriptSlots[slot].chordRoots[i]];
+                        const char* degreeStr = typeNames[scriptSlots[slot].chordTypes[i]];
                         
+                        // Measure both parts with their respective font sizes
                         int16_t bx, by; uint16_t bw, bh;
-                        display->getTextBounds(label, 0, 0, &bx, &by, &bw, &bh, FONT_SMALL);
-                        int16_t labelX = beatX + (boxWidth - bw) / 2 - bx;
-                        int16_t labelY = chartY + (chartH - bh) / 2 - by;
-                        display->drawText(labelX, labelY, label, COLOR_BG, FONT_SMALL);
+                        display->getTextBounds(rootNote, 0, 0, &bx, &by, &bw, &bh, FONT_MEDIUM);
+                        uint16_t rootW = bw, rootH = bh;
+                        
+                        display->getTextBounds(degreeStr, 0, 0, &bx, &by, &bw, &bh, FONT_SMALL);
+                        uint16_t degreeW = bw, degreeH = bh;
+                        
+                        // Position: root note centered horizontally, degree below it
+                        int16_t rootX = beatX + (boxWidth - rootW) / 2 - bx;
+                        int16_t rootY = chartY + (chartH / 2) - rootH - 2;
+                        
+                        int16_t degreeX = beatX + (boxWidth - degreeW) / 2 - bx;
+                        int16_t degreeY = rootY + rootH + 2;
+                        
+                        display->drawText(rootX, rootY, rootNote, COLOR_BG, FONT_MEDIUM);
+                        display->drawText(degreeX, degreeY, degreeStr, COLOR_BG, FONT_SMALL);
                     }
                     
                     beatX += boxWidth;

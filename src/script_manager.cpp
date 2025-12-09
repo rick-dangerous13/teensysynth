@@ -44,22 +44,68 @@ void ScriptManager::begin() {
     
     Serial.println("ScriptManager: Initializing...");
     
-    // Initialize I2C
+    // Initialize I2C with conservative clock speed
+    // Teensy 4.1: SDA=18 (I2C4), SCL=19 (I2C4) by default
+    Serial.println("ScriptManager: Initializing I2C bus...");
     Wire.begin();
+    // Set I2C clock to 100kHz for reliability with multiple devices
+    Wire.setClock(100000);
+    delay(100);  // Wait for I2C to stabilize
     
-    // Initialize MCP4725 DACs
+    // Initialize TCA9548A Multiplexer first
+    Serial.println("ScriptManager: Checking for TCA9548A I2C Multiplexer...");
+    multiplexerPresent = false;
+    currentMultiplexerChannel = 255;  // Track which channel we're on
+    
+    Wire.beginTransmission(TCA9548A_ADDR);
+    if (Wire.endTransmission() == 0) {
+        multiplexerPresent = true;
+        Serial.println("  ✓ TCA9548A (0x70): Detected");
+        // Initialize to channel 0
+        selectMultiplexerChannel(MCP4725_CHANNEL_1);
+    } else {
+        Serial.println("  ✗ TCA9548A (0x70): NOT FOUND - Multiplexer required for your hardware");
+        Serial.println("     See MCP4725_DUAL_DAC_WITH_MULTIPLEXER.md for wiring instructions");
+        multiplexerPresent = false;
+    }
+    
+    // Initialize MCP4725 DACs with detailed diagnostics
     Serial.println("ScriptManager: Initializing MCP4725 DACs...");
+    
+    if (!multiplexerPresent) {
+        Serial.println("  ✗ Skipping DAC initialization - Multiplexer not found");
+        dacInitialized = false;
+        return;
+    }
+    
+    // Initialize DAC1 on Channel 0
+    Serial.println("  Attempting to initialize DAC1 (address 0x60, multiplexer channel 0)...");
+    selectMultiplexerChannel(MCP4725_CHANNEL_1);
+    delay(10);  // Small delay for multiplexer to switch
     bool dac1Ready = dac1.begin(MCP4725_ADDR_1);
+    
+    // Initialize DAC2 on Channel 1
+    Serial.println("  Attempting to initialize DAC2 (address 0x60, multiplexer channel 1)...");
+    selectMultiplexerChannel(MCP4725_CHANNEL_2);
+    delay(10);  // Small delay for multiplexer to switch
     bool dac2Ready = dac2.begin(MCP4725_ADDR_2);
     
     if (dac1Ready && dac2Ready) {
         dacInitialized = true;
-        Serial.println("  DAC1 (0x60): OK");
-        Serial.println("  DAC2 (0x61): OK");
+        Serial.println("  ✓ DAC1 (0x60, Channel 0): Successfully initialized");
+        Serial.println("  ✓ DAC2 (0x60, Channel 1): Successfully initialized");
+        Serial.println("  Ready to output 2-channel CV (Pitch + Gate)");
     } else {
-        Serial.println("  Warning: One or more DACs not detected");
-        if (!dac1Ready) Serial.println("  DAC1 (0x60): NOT FOUND");
-        if (!dac2Ready) Serial.println("  DAC2 (0x61): NOT FOUND");
+        Serial.println("  ✗ WARNING: One or more DACs not detected");
+        if (!dac1Ready) {
+            Serial.println("  ✗ DAC1 (0x60, Channel 0): NOT FOUND");
+            Serial.println("     - Check multiplexer channel 0 wiring (SD0/SC0)");
+        }
+        if (!dac2Ready) {
+            Serial.println("  ✗ DAC2 (0x60, Channel 1): NOT FOUND");
+            Serial.println("     - Check multiplexer channel 1 wiring (SD1/SC1)");
+        }
+        Serial.println("  CV output will be unavailable");
         dacInitialized = false;
     }
     
@@ -332,11 +378,19 @@ bool ScriptManager::loadScriptFromLibrary(uint8_t slot, uint8_t libraryIndex) {
             poliquencerInstances[slot] = nullptr;
             return false;
         }
-        Serial.println("Poliquencer begin() successful");
+        Serial.println("✓ Poliquencer begin() successful");
         
-        // Set shared DACs (Poliquencer uses DAC1 for CV, DAC2 for gate)
+        // Set shared DACs (Poliquencer uses DAC1 for pitch CV, DAC2 for gate)
         if (dacInitialized) {
+            Serial.println("DACs initialized - passing to Poliquencer");
+            Serial.print("  Passing dac1 @ ");
+            Serial.println((unsigned long)&dac1, HEX);
+            Serial.print("  Passing dac2 @ ");
+            Serial.println((unsigned long)&dac2, HEX);
             poliquencerInstances[slot]->setDAC(&dac1, &dac2);
+        } else {
+            Serial.println("WARNING: DACs not initialized - Poliquencer will run without CV output");
+            poliquencerInstances[slot]->setDAC(nullptr, nullptr);
         }
         
         // Set default tempo
@@ -747,5 +801,30 @@ uint8_t ScriptManager::rankChordsForSequencer(uint8_t slot, RankedChord* results
     
     // Rank all chords and return results
     return chordRankingEngine.rankChords(results, maxResults);
+}
+
+void ScriptManager::selectMultiplexerChannel(uint8_t channel) {
+    if (!multiplexerPresent || channel > 7) {
+        return;  // Multiplexer not available or invalid channel
+    }
+    
+    if (currentMultiplexerChannel == channel) {
+        return;  // Already on this channel
+    }
+    
+    // Send command to TCA9548A to select channel
+    // Writing (1 << channel) to the multiplexer selects that channel
+    Wire.beginTransmission(TCA9548A_ADDR);
+    Wire.write(1 << channel);  // Set only the bit corresponding to desired channel
+    uint8_t result = Wire.endTransmission();
+    
+    if (result == 0) {
+        currentMultiplexerChannel = channel;
+        // Serial.print("Multiplexer: Selected channel ");
+        // Serial.println(channel);
+    } else {
+        Serial.print("ERROR: Failed to select multiplexer channel ");
+        Serial.println(channel);
+    }
 }
 

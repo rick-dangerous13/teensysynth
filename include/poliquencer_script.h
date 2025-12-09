@@ -96,7 +96,7 @@ private:
     unsigned long lastStepMicros;
     unsigned long stepDurationMicros;
     unsigned long gateOnMicros;
-    const unsigned long GATE_LENGTH_PERCENT = 50; // Gate on for 50% of step
+    const unsigned long GATE_LENGTH_MICROS = 20000; // Gate pulse: 20ms (Eurorack standard)
     
     // Portamento (slide mode)
     uint16_t portamentoTimeMs;

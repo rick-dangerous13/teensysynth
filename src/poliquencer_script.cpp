@@ -37,12 +37,8 @@ PoliquencerScript::PoliquencerScript()
     for (int i = 0; i < 8; i++) {
         stepValues[i] = pattern[i];
         stepDurations[i] = 1;  // 1 beat per step by default
-        stepGateModes[i] = GATE_NORMAL;
+        stepGateModes[i] = GATE_NORMAL;  // All switches in upper position
     }
-    
-    // Add some variety: make step 4 a slide, step 6 a skip
-    stepGateModes[3] = GATE_SLIDE;
-    stepGateModes[5] = GATE_SKIP;
 }
 
 bool PoliquencerScript::begin() {
@@ -61,23 +57,44 @@ bool PoliquencerScript::begin() {
 void PoliquencerScript::setDAC(Adafruit_MCP4725* dac1Ptr, Adafruit_MCP4725* dac2Ptr) {
     dac1 = dac1Ptr;
     dac2 = dac2Ptr;
+    
+    Serial.println("Poliquencer: setDAC() called");
+    Serial.print("  dac1Ptr: ");
+    Serial.println((unsigned long)dac1Ptr, HEX);
+    Serial.print("  dac2Ptr: ");
+    Serial.println((unsigned long)dac2Ptr, HEX);
+    
     if (dac1 != nullptr && dac2 != nullptr) {
         dacInitialized = true;
         
         // Initialize pitch CV (DAC1) with current step voltage
         float voltage = calculateCVVoltage(stepValues[currentStep]);
         uint16_t dacValue = voltageToDACValue(voltage);
+        
+        Serial.println("Poliquencer: Initializing DAC outputs (via TCA9548A multiplexer)");
+        Serial.print("  Setting DAC1 (Pitch, Channel 0) to ");
+        Serial.print(voltage);
+        Serial.print("V (DAC value: ");
+        Serial.print(dacValue);
+        Serial.println(")");
+        
+        // Note: Actual multiplexer channel selection happens in outputCV/outputGate
+        // Here we just initialize the DAC values
         dac1->setVoltage(dacValue, false);
         
-        // Initialize gate CV (DAC2) to low
+        // Initialize gate CV (DAC2) to low (Channel 1)
+        Serial.println("  Setting DAC2 (Gate, Channel 1) to 0V");
         dac2->setVoltage(0, false);
         
-        Serial.println("Poliquencer: Using 2x MCP4725 DACs");
-        Serial.println("  DAC1: Pitch CV output");
-        Serial.println("  DAC2: Gate CV output");
+        Serial.println("✓ Poliquencer: Using 2x MCP4725 DACs with TCA9548A multiplexer");
+        Serial.println("  DAC1 (0x60, Channel 0): Pitch CV output");
+        Serial.println("  DAC2 (0x60, Channel 1): Gate CV output");
     } else {
         dacInitialized = false;
-        Serial.println("Poliquencer: WARNING - No DAC available, running without CV output");
+        Serial.println("✗ Poliquencer: WARNING - No DAC available");
+        if (dac1 == nullptr) Serial.println("  dac1 is NULL");
+        if (dac2 == nullptr) Serial.println("  dac2 is NULL");
+        Serial.println("  Running without CV output");
     }
 }
 
@@ -138,7 +155,7 @@ void PoliquencerScript::update() {
     
     // Check if gate should turn off (not in slide mode)
     if (gateHigh && stepGateModes[currentStep] != GATE_SLIDE) {
-        if ((currentMicros - gateOnMicros) >= (stepDurationMicros * GATE_LENGTH_PERCENT / 100)) {
+        if ((currentMicros - gateOnMicros) >= GATE_LENGTH_MICROS) {
             gateHigh = false;
             outputGate(false);
         }
@@ -294,19 +311,58 @@ uint16_t PoliquencerScript::voltageToDACValue(float volts) {
 }
 
 void PoliquencerScript::outputCV(float volts) {
-    if (dacInitialized && dac1 != nullptr) {
-        // Update pitch CV on DAC1
-        uint16_t dacValue = voltageToDACValue(volts);
-        dac1->setVoltage(dacValue, false);
+    if (!dacInitialized) {
+        return;  // Silent fail if DACs not initialized
+    }
+    
+    if (dac1 == nullptr) {
+        Serial.println("ERROR: outputCV() called but dac1 is NULL");
+        return;
+    }
+    
+    // Select multiplexer channel for DAC1 (Pitch CV)
+    Wire.beginTransmission(TCA9548A_ADDR);
+    Wire.write(1 << MCP4725_CHANNEL_1);  // Select channel 0
+    Wire.endTransmission();
+    
+    // Update pitch CV on DAC1
+    uint16_t dacValue = voltageToDACValue(volts);
+    dac1->setVoltage(dacValue, false);
+    
+    // Debug: Log CV changes
+    static uint16_t lastDacValue = 0xFFFF;
+    if (dacValue != lastDacValue) {
+        Serial.print("DAC1 CV: ");
+        Serial.print(volts, 2);
+        Serial.print("V (value: ");
+        Serial.print(dacValue);
+        Serial.println(")");
+        lastDacValue = dacValue;
     }
 }
 
 void PoliquencerScript::outputGate(bool high) {
-    if (dacInitialized && dac2 != nullptr) {
-        // Output gate on DAC2: 5V for high, 0V for low
-        uint16_t gateValue = high ? DAC_MAX_VALUE : 0;
-        dac2->setVoltage(gateValue, false);
+    if (!dacInitialized) {
+        return;  // Silent fail if DACs not initialized
     }
+    
+    if (dac2 == nullptr) {
+        Serial.println("ERROR: outputGate() called but dac2 is NULL");
+        return;
+    }
+    
+    // Select multiplexer channel for DAC2 (Gate CV)
+    Wire.beginTransmission(TCA9548A_ADDR);
+    Wire.write(1 << MCP4725_CHANNEL_2);  // Select channel 1
+    Wire.endTransmission();
+    
+    // Output gate on DAC2: 5V for high, 0V for low
+    uint16_t gateValue = high ? DAC_MAX_VALUE : 0;
+    dac2->setVoltage(gateValue, false);
+    
+    // Debug: Log gate changes
+    Serial.print("DAC2 Gate: ");
+    Serial.println(high ? "HIGH (5V)" : "LOW (0V)");
 }
 
 void PoliquencerScript::getDisplayText(char* buffer, size_t bufferSize) {

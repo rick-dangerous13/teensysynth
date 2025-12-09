@@ -121,6 +121,9 @@ public:
     // DAC access (for testing)
     Adafruit_MCP4725* getDAC1() { return &dac1; }
     Adafruit_MCP4725* getDAC2() { return &dac2; }
+    
+    // Multiplexer support (for TCA9548A)
+    void selectMultiplexerChannel(uint8_t channel);
 
 private:
     ScriptInfo scripts[MAX_SCRIPTS];
@@ -132,8 +135,10 @@ private:
     
     // Shared DAC instances (2x MCP4725)
     Adafruit_MCP4725 dac1;  // CV output (address 0x60)
-    Adafruit_MCP4725 dac2;  // Gate/CV output (address 0x61)
+    Adafruit_MCP4725 dac2;  // Gate/CV output (address 0x60, on different multiplexer channel)
     bool dacInitialized;
+    bool multiplexerPresent;  // Whether TCA9548A is detected
+    uint8_t currentMultiplexerChannel;  // Track current active channel
     
     // Script library
     static const ScriptLibraryEntry scriptLibrary[];
