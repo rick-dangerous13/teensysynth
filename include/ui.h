@@ -115,9 +115,9 @@ struct ScriptSlot {
     uint8_t lastChordTheoryMode;
     
     // Global parameters (ChordSequencer)
-    uint8_t selectedGlobalParam;     // 0-4: Key, Degree, Theory, Compactness, Energy; 255=none
+    uint8_t selectedGlobalParam;     // 0-4: Root, Degree, Theory, Compactness, Energy; 255=none
     bool editingGlobalParam;         // true when editing a global param value
-    uint8_t globalKey;               // Current key (0-11)
+    uint8_t globalRoot;              // Root note (0-11)
     uint8_t globalDegree;            // Scale degree (0-6: Major, Minor, Dorian, etc.)
     uint8_t globalTheoryMode;        // Current theory mode (0-4)
     float globalVoiceLeading;        // Voice leading compactness (0.0-1.0)
@@ -126,7 +126,7 @@ struct ScriptSlot {
     // Previous state for change detection
     uint8_t lastSelectedGlobalParam;
     bool lastEditingGlobalParam;
-    uint8_t lastGlobalKey;
+    uint8_t lastGlobalRoot;
     uint8_t lastGlobalDegree;
     uint8_t lastGlobalTheoryMode;
     float lastGlobalVoiceLeading;
@@ -268,7 +268,7 @@ public:
     uint8_t getSelectedGlobalParam(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].selectedGlobalParam : 255; }
     void setSelectedGlobalParam(uint8_t slot, uint8_t param) { if (slot < MAX_SCRIPTS) scriptSlots[slot].selectedGlobalParam = param; }
     bool isEditingGlobalParam(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].editingGlobalParam : false; }
-    uint8_t getGlobalKey(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].globalKey : 0; }
+    uint8_t getGlobalRoot(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].globalRoot : 0; }
     uint8_t getGlobalDegree(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].globalDegree : 0; }
     uint8_t getGlobalTheoryMode(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].globalTheoryMode : 0; }
     float getGlobalVoiceLeading(uint8_t slot) const { return (slot < MAX_SCRIPTS) ? scriptSlots[slot].globalVoiceLeading : 0.5f; }

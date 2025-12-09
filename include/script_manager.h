@@ -93,10 +93,11 @@ public:
     
     // ChordSequencer access
     bool getChordSequencerData(uint8_t slot, uint8_t chordRoots[MAX_CHORD_SLOTS], uint8_t chordTypes[MAX_CHORD_SLOTS], uint8_t chordBeats[MAX_CHORD_SLOTS], uint8_t* currentChordSlot, uint8_t* beatCounter, uint8_t* chordCount = nullptr);
+    void resetChordSequencer(uint8_t slot);
     void setChordSequencerChord(uint8_t slot, uint8_t chordSlot, uint8_t rootNote, uint8_t chordType);
     void setChordSequencerChordBeats(uint8_t slot, uint8_t chordSlot, uint8_t beats);
     bool getChordSequencerGlobals(uint8_t slot, GlobalParameters* globals);
-    void setChordSequencerKey(uint8_t slot, MusicalKey key);
+    void setChordSequencerRoot(uint8_t slot, MusicalRoot root);
     void setChordSequencerDegree(uint8_t slot, ScaleDegree degree);
     ScaleDegree getChordSequencerDegree(uint8_t slot);
     void setChordSequencerTheoryMode(uint8_t slot, TheoryMode mode);

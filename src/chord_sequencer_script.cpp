@@ -28,7 +28,7 @@ ChordSequencerScript::ChordSequencerScript()
     , beatDurationMicros(500000) {  // 120 BPM default
 
     // Initialize global parameters with sensible defaults
-    globals.key = MKEY_C;
+    globals.root = MKEY_C;
     globals.degree = DEGREE_MAJOR;
     globals.theoryMode = THEORY_FUNCTIONAL;
     globals.voiceLeadingCompactness = 0.5f;
@@ -114,6 +114,12 @@ void ChordSequencerScript::setChord(uint8_t slot, uint8_t rootNote, ChordType ty
     Serial.print(" set to ");
     Serial.print(getNoteName(rootNote));
     Serial.println(getChordTypeName(type));
+}
+
+void ChordSequencerScript::clearChords() {
+    chordCount = 0;
+    currentChordSlot = 0;
+    beatCounter = 0;
 }
 
 void ChordSequencerScript::getChord(uint8_t slot, uint8_t* rootNote, ChordType* type) {

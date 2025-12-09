@@ -53,6 +53,7 @@ void handleScriptSelectState();
 void handleScriptLibraryState();
 void handleScriptRunningState();
 void handleSettingsState();
+void handleTestConsole();
 
 // Helper to change state and track history
 void changeState(AppState newState) {
@@ -94,6 +95,9 @@ void setup() {
 void loop() {
     // Update input state
     input.update();
+
+    // Handle serial test console (non-blocking)
+    handleTestConsole();
     
     // Handle state machine
     switch (currentState) {
@@ -518,7 +522,7 @@ void handleScriptSelectState() {
                 GlobalParameters currentGlobals;
                 if (scriptManager.getChordSequencerGlobals(0, &currentGlobals)) {
                     if (selectedGlobal == 0) {
-                        scriptManager.setChordSequencerKey(0, (MusicalKey)ui.getGlobalKey(0));
+                        scriptManager.setChordSequencerRoot(0, (MusicalRoot)ui.getGlobalRoot(0));
                     } else if (selectedGlobal == 1) {
                         scriptManager.setChordSequencerDegree(0, (ScaleDegree)ui.getGlobalDegree(0));
                     } else if (selectedGlobal == 2) {
@@ -861,5 +865,142 @@ void handleSettingsState() {
         changeState(AppState::MAIN_MENU);
         ui.resetMenuTracking();  // Reset for new screen
         ui.showMainMenu();
+    }
+}
+
+// Lightweight serial test console for automated checks
+void handleTestConsole() {
+    static char lineBuf[128];
+    static bool testConsoleInitialized = false;
+    const char* noteNames[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+
+    while (Serial && Serial.available()) {
+        size_t len = Serial.readBytesUntil('\n', lineBuf, sizeof(lineBuf) - 1);
+        lineBuf[len] = '\0';
+        String line = String(lineBuf);
+        line.trim();
+        if (line.length() == 0) continue;
+        if (!line.startsWith("TEST")) continue;  // Ignore non-test input
+
+        // Auto-initialize chord sequencer on first TEST command
+        if (!testConsoleInitialized) {
+            scriptManager.loadScriptFromLibrary(0, 1);  // Load chord sequencer (index 1)
+            testConsoleInitialized = true;
+            Serial.println("AUTO-INIT: Chord Sequencer loaded to slot 0");
+        }
+
+        auto readInt = [&](const char* key, int defaultVal) -> int {
+            int pos = line.indexOf(key);
+            if (pos < 0) return defaultVal;
+            pos += strlen(key);
+            int end = line.indexOf(' ', pos);
+            String token = (end == -1) ? line.substring(pos) : line.substring(pos, end);
+            return (int)token.toInt();
+        };
+
+        auto readFloat = [&](const char* key, float defaultVal) -> float {
+            int pos = line.indexOf(key);
+            if (pos < 0) return defaultVal;
+            pos += strlen(key);
+            int end = line.indexOf(' ', pos);
+            String token = (end == -1) ? line.substring(pos) : line.substring(pos, end);
+            return token.toFloat();
+        };
+
+        if (line.startsWith("TEST HELP")) {
+            Serial.println("TEST commands:");
+            Serial.println("  TEST RESET");
+            Serial.println("  TEST GLOBAL root=<0-11> degree=<0-6> theory=<0-4> vl=<0-1> energy=<0-1>");
+            Serial.println("  TEST CHORD slot=<0-7> root=<0-11> type=<0=maj|1=min> beats=<1-32>");
+            Serial.println("  TEST RANK");
+            Serial.println("  TEST STATE");
+            continue;
+        }
+
+        if (line.startsWith("TEST RESET")) {
+            scriptManager.resetChordSequencer(0);
+            Serial.println("OK RESET");
+            continue;
+        }
+
+        if (line.startsWith("TEST GLOBAL")) {
+            int root = readInt("root=", 0);
+            int degree = readInt("degree=", 0);
+            int theory = readInt("theory=", 0);
+            float vl = readFloat("vl=", 0.5f);
+            float energy = readFloat("energy=", 0.5f);
+
+            scriptManager.setChordSequencerRoot(0, (MusicalRoot)root);
+            scriptManager.setChordSequencerDegree(0, (ScaleDegree)degree);
+            scriptManager.setChordSequencerTheoryMode(0, (TheoryMode)theory);
+            scriptManager.setChordSequencerVoiceLeading(0, vl);
+            scriptManager.setChordSequencerEnergy(0, energy);
+
+            Serial.print("OK GLOBAL root="); Serial.print(root);
+            Serial.print(" degree="); Serial.print(degree);
+            Serial.print(" theory="); Serial.print(theory);
+            Serial.print(" vl="); Serial.print(vl, 3);
+            Serial.print(" energy="); Serial.println(energy, 3);
+            continue;
+        }
+
+        if (line.startsWith("TEST CHORD")) {
+            int slot = readInt("slot=", 0);
+            int root = readInt("root=", 0);
+            int type = readInt("type=", 0);
+            int beats = readInt("beats=", 8);
+
+            scriptManager.setChordSequencerChord(0, (uint8_t)slot, (uint8_t)root, (uint8_t)type);
+            scriptManager.setChordSequencerChordBeats(0, (uint8_t)slot, (uint8_t)beats);
+
+            Serial.print("OK CHORD slot="); Serial.print(slot);
+            Serial.print(" root="); Serial.print(noteNames[root % 12]);
+            Serial.print(" type="); Serial.print(type == 0 ? "maj" : "min");
+            Serial.print(" beats="); Serial.println(beats);
+            continue;
+        }
+
+        if (line.startsWith("TEST RANK")) {
+            RankedChord ranked[24];
+            uint8_t count = scriptManager.rankChordsForSequencer(0, ranked, 24);
+            Serial.print("RANK count="); Serial.println(count);
+            for (uint8_t i = 0; i < count && i < 12; i++) {
+                Serial.print(i);
+                Serial.print(": ");
+                Serial.print(noteNames[ranked[i].rootNote % 12]);
+                Serial.print(" ");
+                Serial.print(ranked[i].type == CHORD_MAJOR ? "maj" : "min");
+                Serial.print(" score=");
+                Serial.println(ranked[i].totalScore, 4);
+            }
+            continue;
+        }
+
+        if (line.startsWith("TEST STATE")) {
+            uint8_t roots[MAX_CHORD_SLOTS];
+            uint8_t types[MAX_CHORD_SLOTS];
+            uint8_t beats[MAX_CHORD_SLOTS];
+            uint8_t currentSlot = 0;
+            uint8_t beatCounter = 0;
+            uint8_t chordCount = 0;
+            if (scriptManager.getChordSequencerData(0, roots, types, beats, &currentSlot, &beatCounter, &chordCount)) {
+                Serial.print("STATE chords="); Serial.println(chordCount);
+                for (uint8_t i = 0; i < chordCount; i++) {
+                    Serial.print("  ");
+                    Serial.print(i);
+                    Serial.print(": ");
+                    Serial.print(noteNames[roots[i] % 12]);
+                    Serial.print(" ");
+                    Serial.print(types[i] == 0 ? "maj" : "min");
+                    Serial.print(" beats=");
+                    Serial.println(beats[i]);
+                }
+            } else {
+                Serial.println("STATE ERROR");
+            }
+            continue;
+        }
+
+        Serial.println("ERR UNKNOWN TEST CMD");
     }
 }

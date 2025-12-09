@@ -583,6 +583,13 @@ bool ScriptManager::getChordSequencerData(uint8_t slot, uint8_t chordRoots[MAX_C
     return true;
 }
 
+void ScriptManager::resetChordSequencer(uint8_t slot) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return;
+    }
+    chordSequencerInstances[slot]->clearChords();
+}
+
 void ScriptManager::setChordSequencerChord(uint8_t slot, uint8_t chordSlot, uint8_t rootNote, uint8_t chordType) {
     if (slot >= MAX_SCRIPTS || chordSlot >= MAX_CHORD_SLOTS || chordSequencerInstances[slot] == nullptr) {
         return;
@@ -609,12 +616,12 @@ bool ScriptManager::getChordSequencerGlobals(uint8_t slot, GlobalParameters* glo
     return true;
 }
 
-void ScriptManager::setChordSequencerKey(uint8_t slot, MusicalKey key) {
+void ScriptManager::setChordSequencerRoot(uint8_t slot, MusicalRoot root) {
     if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
         return;
     }
     
-    chordSequencerInstances[slot]->setKey(key);
+    chordSequencerInstances[slot]->setRoot(root);
 }
 
 void ScriptManager::setChordSequencerDegree(uint8_t slot, ScaleDegree degree) {
@@ -709,9 +716,21 @@ uint8_t ScriptManager::rankChordsForSequencer(uint8_t slot, RankedChord* results
     
     // Get current context from sequencer
     const GlobalParameters& globals = sequencer->getGlobalParameters();
-    uint8_t currentRoot;
-    ChordType currentType;
-    sequencer->getChord(sequencer->getCurrentChordSlot(), &currentRoot, &currentType);
+    
+    // For ranking purposes, we rank candidates relative to the LAST added chord
+    // (which is the most recent in the progression)
+    // This makes suggestions contextual to what was just added
+    uint8_t currentRoot = 0;
+    ChordType currentType = CHORD_MAJOR;
+    
+    if (sequencer->getChordCount() > 0) {
+        // Use the last chord (most recently added) for voice-leading context
+        uint8_t lastChordSlot = sequencer->getChordCount() - 1;
+        sequencer->getChord(lastChordSlot, &currentRoot, &currentType);
+    } else {
+        // No chords yet - use neutral sentinel so voice-leading has minimal effect
+        currentRoot = 255;  // Invalid root triggers no voice-leading filtering
+    }
     
     // Set up ranking engine with current context
     chordRankingEngine.setContext(globals, currentRoot, currentType);

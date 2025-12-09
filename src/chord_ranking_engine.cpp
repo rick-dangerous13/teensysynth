@@ -22,9 +22,9 @@ void ChordRankingEngine::setContext(const GlobalParameters& globals,
     this->currentChordRoot = currentChordRoot;
     this->currentChordType = currentChordType;
     
-    // Generate diatonic scale for this key and degree
-    generateDiatonicScale(globals.key, globals.degree);
-    scaleRoot = globals.key;
+    // Generate diatonic scale based on root and degree
+    generateDiatonicScale(globals.root, globals.degree);
+    scaleRoot = globals.root;
     
     // Reset to global overrides
     effectiveTheoryMode = globals.theoryMode;
@@ -220,6 +220,12 @@ float ChordRankingEngine::computeEnergyScore(uint8_t rootNote, ChordType type) c
 }
 
 float ChordRankingEngine::computeVoiceLeadingScore(uint8_t rootNote, ChordType type) const {
+    // If current chord root is invalid (255), return neutral score
+    // This happens when there are no chords yet
+    if (currentChordRoot == 255) {
+        return 0.5f;  // Neutral: doesn't favor any chord by voice-leading
+    }
+    
     float score = 0.5f;
     
     // Compute semitone distance from current chord root to candidate
@@ -272,8 +278,8 @@ uint8_t ChordRankingEngine::rankChords(RankedChord* results, uint8_t maxResults)
         for (uint8_t typeIdx = 0; typeIdx < 2; typeIdx++) {
             ChordType type = (typeIdx == 0) ? CHORD_MAJOR : CHORD_MINOR;
             
-            // Skip if current chord
-            if (root == currentChordRoot && type == currentChordType) {
+            // Skip if current chord (only if current is valid, not sentinel 255)
+            if (currentChordRoot != 255 && root == currentChordRoot && type == currentChordType) {
                 continue;  // Don't suggest the same chord we're already on
             }
             

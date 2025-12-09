@@ -68,12 +68,12 @@ Result: Single normalizedScore (0.0-1.0) per chord
 
 ```
 ChordRankingEngine (Standalone)
-├── Input: GlobalParameters (key, degree, theory mode, energy, VL)
+├── Input: GlobalParameters (root, degree, theory mode, energy, VL)
 ├── Input: Current chord (root, type)
 ├── Input: Local overrides (optional)
 │
 ├── Scale Generation
-│   └── generateDiatonicScale(key, degree)
+│   └── generateDiatonicScale(root, degree)
 │       └── Returns 7 scale degrees for any mode
 │
 ├── Chord Evaluation (24 chords)
@@ -212,7 +212,7 @@ C Major scale:
 ## Integration with Existing Features
 
 ### Global Parameters (Package 3 Setup)
-- ✓ Key: Used as scale root
+- ✓ Root: Used as scale root note
 - ✓ Degree: Determines scale mode
 - ✓ TheoryMode: Controls ranking strategy
 - ✓ VoiceLeadingCompactness: Affects distance preference

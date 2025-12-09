@@ -186,7 +186,7 @@ for (uint8_t i = 0; i < count; i++) {
 // For testing or custom scenarios
 ChordRankingEngine engine;
 GlobalParameters context = {
-    .key = MKEY_D,
+    .root = MKEY_D,
     .degree = DEGREE_MINOR,
     .theoryMode = THEORY_MODAL,
     .voiceLeadingCompactness = 0.8f,

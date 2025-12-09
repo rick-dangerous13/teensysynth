@@ -156,7 +156,7 @@ float spreadScore = engine.getSpreadScore(0, CHORD_MAJOR);
 ```cpp
 ChordRankingEngine engine;
 GlobalParameters globals = {
-    .key = MKEY_C,
+    .root = MKEY_C,
     .degree = DEGREE_MINOR,
     .theoryMode = THEORY_FUNCTIONAL,
     .voiceLeadingCompactness = 0.7f,
@@ -244,7 +244,7 @@ To verify the ranking engine is working:
 
 Example test case:
 ```
-Key: C, Degree: Major, TheoryMode: Functional, Energy: 0.5, VL: 0.7
+Root: C, Degree: Major, TheoryMode: Functional, Energy: 0.5, VL: 0.7
 
 Current chord: C major
 Expected top suggestions: G major (V), F major (IV), A minor (VI)

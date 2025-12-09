@@ -22,7 +22,7 @@ enum ChordType {
 };
 
 // Musical key enumeration
-enum MusicalKey {
+enum MusicalRoot {
     MKEY_C = 0, MKEY_CS, MKEY_D, MKEY_DS, MKEY_E, MKEY_F,
     MKEY_FS, MKEY_G, MKEY_GS, MKEY_A, MKEY_AS, MKEY_B
 };
@@ -49,7 +49,7 @@ enum ScaleDegree {
 
 // Global musical parameters
 struct GlobalParameters {
-    MusicalKey key;                    // Current key root note (C, C#, D, etc.)
+    MusicalRoot root;                  // Root note (C, C#, D, etc.)
     ScaleDegree degree;                // Scale quality (major, minor, dorian, etc.)
     TheoryMode theoryMode;             // Theory mode for suggestions
     float voiceLeadingCompactness;     // 0.0-1.0: prefer minimal voice movement
@@ -124,10 +124,11 @@ public:
     uint8_t getCurrentChordSlot() const { return currentChordSlot; }
     uint8_t getBeatCounter() const { return beatCounter; }
     uint8_t getChordCount() const { return chordCount; }
+    void clearChords();
     
     // Global parameter accessors
     const GlobalParameters& getGlobalParameters() const { return globals; }
-    void setKey(MusicalKey key) { globals.key = key; }
+    void setRoot(MusicalRoot root) { globals.root = root; }
     void setDegree(ScaleDegree degree) { globals.degree = degree; }
     ScaleDegree getDegree() const { return globals.degree; }
     void setTheoryMode(TheoryMode mode) { globals.theoryMode = mode; }

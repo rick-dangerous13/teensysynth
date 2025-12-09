@@ -91,7 +91,7 @@ UI::UI() : display(nullptr), scriptManager(nullptr), clockTempo(DEFAULT_CLOCK_BP
         // Global parameters
         scriptSlots[i].selectedGlobalParam = 255;  // None selected initially
         scriptSlots[i].editingGlobalParam = false;
-        scriptSlots[i].globalKey = 0;  // C
+        scriptSlots[i].globalRoot = 0;  // C
         scriptSlots[i].globalDegree = 0;  // Major
         scriptSlots[i].globalTheoryMode = 0;  // Functional
         scriptSlots[i].globalVoiceLeading = 0.5f;
@@ -99,7 +99,7 @@ UI::UI() : display(nullptr), scriptManager(nullptr), clockTempo(DEFAULT_CLOCK_BP
         scriptSlots[i].globalParamNeedsRedraw = true;  // Force initial draw
         scriptSlots[i].lastSelectedGlobalParam = 255;
         scriptSlots[i].lastEditingGlobalParam = false;
-        scriptSlots[i].lastGlobalKey = 255;
+        scriptSlots[i].lastGlobalRoot = 255;
         scriptSlots[i].lastGlobalDegree = 255;
         scriptSlots[i].lastGlobalTheoryMode = 255;
         scriptSlots[i].lastGlobalVoiceLeading = -1.0f;
@@ -814,14 +814,14 @@ void UI::drawGlobalParameterBoxes(uint8_t slot, int16_t x, int16_t y, int16_t w,
     int16_t boxStartX = x + 10;
     
     // Box data: label, value string
-    const char* labels[] = {"key", "degree", "theory", "compact", "energy"};
+    const char* labels[] = {"root", "degree", "theory", "compact", "energy"};
     char values[5][16];
     
     // Check if this needs a full redraw (from slot state, not static)
     bool isFirstDraw = scriptSlots[slot].globalParamNeedsRedraw;
     
     // Format values
-    snprintf(values[0], sizeof(values[0]), "%s", noteNames[scriptSlots[slot].globalKey]);
+    snprintf(values[0], sizeof(values[0]), "%s", noteNames[scriptSlots[slot].globalRoot]);
     snprintf(values[1], sizeof(values[1]), "%s", degreeNames[scriptSlots[slot].globalDegree]);
     snprintf(values[2], sizeof(values[2]), "%s", theoryModeNames[scriptSlots[slot].globalTheoryMode]);
     snprintf(values[3], sizeof(values[3]), "%.2f", scriptSlots[slot].globalVoiceLeading);
@@ -841,7 +841,7 @@ void UI::drawGlobalParameterBoxes(uint8_t slot, int16_t x, int16_t y, int16_t w,
         
         // Check if values actually changed
         bool anyValueChanged = false;
-        if (scriptSlots[slot].globalKey != scriptSlots[slot].lastGlobalKey) anyValueChanged = true;
+        if (scriptSlots[slot].globalRoot != scriptSlots[slot].lastGlobalRoot) anyValueChanged = true;
         if (scriptSlots[slot].globalDegree != scriptSlots[slot].lastGlobalDegree) anyValueChanged = true;
         if (scriptSlots[slot].globalTheoryMode != scriptSlots[slot].lastGlobalTheoryMode) anyValueChanged = true;
         if (fabs(scriptSlots[slot].globalVoiceLeading - scriptSlots[slot].lastGlobalVoiceLeading) > 0.001f) anyValueChanged = true;
@@ -884,7 +884,7 @@ void UI::drawGlobalParameterBoxes(uint8_t slot, int16_t x, int16_t y, int16_t w,
     // Update last values for change detection
     scriptSlots[slot].lastSelectedGlobalParam = scriptSlots[slot].selectedGlobalParam;
     scriptSlots[slot].lastEditingGlobalParam = scriptSlots[slot].editingGlobalParam;
-    scriptSlots[slot].lastGlobalKey = scriptSlots[slot].globalKey;
+    scriptSlots[slot].lastGlobalRoot = scriptSlots[slot].globalRoot;
     scriptSlots[slot].lastGlobalDegree = scriptSlots[slot].globalDegree;
     scriptSlots[slot].lastGlobalTheoryMode = scriptSlots[slot].globalTheoryMode;
     scriptSlots[slot].lastGlobalVoiceLeading = scriptSlots[slot].globalVoiceLeading;
@@ -3014,7 +3014,7 @@ void UI::exitGlobalParamEdit(uint8_t slot, bool save) {
     
     if (!save) {
         // Restore previous values - will be synced from script manager on next update
-        scriptSlots[slot].lastGlobalKey = 255;  // Force re-sync
+        scriptSlots[slot].lastGlobalRoot = 255;  // Force re-sync
     }
     
     scriptSlots[slot].editingGlobalParam = false;
@@ -3026,12 +3026,12 @@ void UI::adjustGlobalParam(uint8_t slot, int8_t delta) {
     uint8_t param = scriptSlots[slot].selectedGlobalParam;
     
     switch (param) {
-        case 0: // Key
+        case 0: // Root
             {
-                int16_t newKey = (int16_t)scriptSlots[slot].globalKey + delta;
-                if (newKey < 0) newKey = 11;
-                if (newKey > 11) newKey = 0;
-                scriptSlots[slot].globalKey = (uint8_t)newKey;
+                int16_t newRoot = (int16_t)scriptSlots[slot].globalRoot + delta;
+                if (newRoot < 0) newRoot = 11;
+                if (newRoot > 11) newRoot = 0;
+                scriptSlots[slot].globalRoot = (uint8_t)newRoot;
             }
             break;
             
@@ -3077,15 +3077,15 @@ void UI::syncGlobalsFromScript(uint8_t slot, const GlobalParameters& globals) {
     if (slot >= MAX_SCRIPTS) return;
     
     // Detect actual changes in the source script
-    uint8_t newKey = (uint8_t)globals.key;
+    uint8_t newRoot = (uint8_t)globals.root;
     uint8_t newDegree = (uint8_t)globals.degree;
     uint8_t newTheoryMode = (uint8_t)globals.theoryMode;
     float newVoiceLeading = globals.voiceLeadingCompactness;
     float newEnergy = globals.energy;
     
     // Only update if something actually changed, preserving last* tracking
-    if (newKey != scriptSlots[slot].globalKey) {
-        scriptSlots[slot].globalKey = newKey;
+    if (newRoot != scriptSlots[slot].globalRoot) {
+        scriptSlots[slot].globalRoot = newRoot;
     }
     if (newDegree != scriptSlots[slot].globalDegree) {
         scriptSlots[slot].globalDegree = newDegree;
