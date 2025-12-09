@@ -700,3 +700,33 @@ uint8_t ScriptManager::getChordSequencerChordTheoryMode(uint8_t slot, uint8_t ch
     return chordSequencerInstances[slot]->getChordTheoryMode(chordSlot);
 }
 
+uint8_t ScriptManager::rankChordsForSequencer(uint8_t slot, RankedChord* results, uint8_t maxResults) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr || !results) {
+        return 0;
+    }
+    
+    ChordSequencerScript* sequencer = chordSequencerInstances[slot];
+    
+    // Get current context from sequencer
+    const GlobalParameters& globals = sequencer->getGlobalParameters();
+    uint8_t currentRoot;
+    ChordType currentType;
+    sequencer->getChord(sequencer->getCurrentChordSlot(), &currentRoot, &currentType);
+    
+    // Set up ranking engine with current context
+    chordRankingEngine.setContext(globals, currentRoot, currentType);
+    
+    // Get local overrides from current chord (if available and slot is valid)
+    uint8_t chordSlot = sequencer->getCurrentChordSlot();
+    if (chordSlot < sequencer->getChordCount()) {
+        uint8_t localTheoryMode = sequencer->getChordTheoryMode(chordSlot);
+        float localSpread = sequencer->getChordSpread(chordSlot);
+        uint8_t localInversion = sequencer->getChordInversion(chordSlot);
+        
+        chordRankingEngine.setLocalOverrides(localTheoryMode, localSpread, localInversion);
+    }
+    
+    // Rank all chords and return results
+    return chordRankingEngine.rankChords(results, maxResults);
+}
+

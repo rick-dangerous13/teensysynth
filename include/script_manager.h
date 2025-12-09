@@ -15,6 +15,7 @@
 #include "lfo_script.h"
 #include "poliquencer_script.h"
 #include "chord_sequencer_script.h"
+#include "chord_ranking_engine.h"
 #include "touch_test_script.h"
 
 // Script library entry
@@ -113,14 +114,12 @@ public:
     void setChordSequencerChordTheoryMode(uint8_t slot, uint8_t chordSlot, uint8_t mode);
     uint8_t getChordSequencerChordTheoryMode(uint8_t slot, uint8_t chordSlot);
     
+    // Chord ranking engine (Package 3)
+    uint8_t rankChordsForSequencer(uint8_t slot, RankedChord* results, uint8_t maxResults);
+    
     // DAC access (for testing)
     Adafruit_MCP4725* getDAC1() { return &dac1; }
     Adafruit_MCP4725* getDAC2() { return &dac2; }
-    
-    // ChordSequencer direct access (for ranking engine integration)
-    ChordSequencerScript* getChordSequencer(uint8_t slot) {
-        return (slot < MAX_SCRIPTS) ? chordSequencerInstances[slot] : nullptr;
-    }
 
 private:
     ScriptInfo scripts[MAX_SCRIPTS];
@@ -128,6 +127,7 @@ private:
     PoliquencerScript* poliquencerInstances[MAX_SCRIPTS];  // Poliquencer instance per slot
     ChordSequencerScript* chordSequencerInstances[MAX_SCRIPTS];  // Chord sequencer instance per slot
     TouchTestScript* touchTestInstances[MAX_SCRIPTS];  // Touch test instance per slot
+    ChordRankingEngine chordRankingEngine;  // Single instance for ranking chords
     
     // Shared DAC instances (2x MCP4725)
     Adafruit_MCP4725 dac1;  // CV output (address 0x60)
