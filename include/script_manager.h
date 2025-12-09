@@ -116,6 +116,11 @@ public:
     // DAC access (for testing)
     Adafruit_MCP4725* getDAC1() { return &dac1; }
     Adafruit_MCP4725* getDAC2() { return &dac2; }
+    
+    // ChordSequencer direct access (for ranking engine integration)
+    ChordSequencerScript* getChordSequencer(uint8_t slot) {
+        return (slot < MAX_SCRIPTS) ? chordSequencerInstances[slot] : nullptr;
+    }
 
 private:
     ScriptInfo scripts[MAX_SCRIPTS];

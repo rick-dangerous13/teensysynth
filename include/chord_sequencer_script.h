@@ -140,6 +140,27 @@ public:
     // Display info
     void getDisplayText(char* buffer, size_t bufferSize);
     
+    // Chord Suggestion Ranking Engine (Package 3)
+    // Scores chords based on theory, energy, voice leading, and spread
+    struct ChordScore {
+        uint8_t rootNote;              // 0-11
+        ChordType type;                // Major or Minor
+        float totalScore;              // 0.0-1.0 combined score
+        float theoryScore;             // Theory match
+        float energyScore;             // Energy alignment
+        float voiceLeadingScore;       // Voice leading preference
+        float spreadScore;             // Spread preference
+    };
+    
+    // Score a single chord candidate
+    ChordScore scoreChord(uint8_t candidateRoot, ChordType candidateType, 
+                         uint8_t previousRoot = 0, ChordType previousType = CHORD_MAJOR);
+    
+    // Get ranked list of all 12 chords (Major and Minor)
+    // Returns array of ChordScore sorted by totalScore (highest first)
+    // Size will always be 24 (12 roots × 2 types)
+    const ChordScore* getRankedChords(uint8_t& outCount);
+    
 private:
     // Global musical parameters
     GlobalParameters globals;
@@ -157,6 +178,16 @@ private:
     
     // Scale generation
     void generateScale(uint8_t rootNote, ChordType type, int8_t* scaleNotes);
+    
+    // Ranking engine helpers
+    float calculateTheoryScore(uint8_t chordRoot, ChordType chordType);
+    float calculateVoiceLeadingScore(uint8_t prevRoot, ChordType prevType, 
+                                     uint8_t nextRoot, ChordType nextType);
+    void generateAllChordScores();  // Cache scores for all 24 chords
+    
+    // Cached scores (updated when globals change)
+    ChordScore allChordScores[24];
+    bool scoresNeedUpdate;          // True when globals change
     
     // Note name helpers
     const char* getNoteName(uint8_t note);

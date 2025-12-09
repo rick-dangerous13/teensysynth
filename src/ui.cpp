@@ -84,6 +84,15 @@ UI::UI() : display(nullptr), scriptManager(nullptr), clockTempo(DEFAULT_CLOCK_BP
         scriptSlots[i].chordListSelectedIdx = 0;
         scriptSlots[i].chordListTargetSlot = 0;
         scriptSlots[i].lastChordListSelectedIdx = 255;
+        
+        // Chord ranking cache (Package 4)
+        scriptSlots[i].rankedChordCount = 0;
+        for (int j = 0; j < 24; j++) {
+            scriptSlots[i].rankedChordRoots[j] = 0;
+            scriptSlots[i].rankedChordTypes[j] = 0;
+            scriptSlots[i].rankedChordScores[j] = 0.0f;
+        }
+        
         scriptSlots[i].beatCountPickerActive = false;
         scriptSlots[i].beatCountSelection = 8;
         scriptSlots[i].lastBeatCountSelection = 255;
@@ -2292,9 +2301,14 @@ void UI::navigateChordList(uint8_t slot, int8_t delta) {
     if (slot >= MAX_SCRIPTS) return;
     if (!scriptSlots[slot].chordListActive) return;
 
+    // Get the maximum available chords (ranked chords or fallback to library)
+    uint8_t maxChords = scriptSlots[slot].rankedChordCount > 0 
+        ? scriptSlots[slot].rankedChordCount 
+        : 12;  // Fallback to fixed library size
+
     int16_t idx = (int16_t)scriptSlots[slot].chordListSelectedIdx + delta;
-    while (idx < 0) idx += 12;
-    while (idx >= 12) idx -= 12;
+    while (idx < 0) idx += maxChords;
+    while (idx >= maxChords) idx -= maxChords;
     scriptSlots[slot].chordListSelectedIdx = (uint8_t)idx;
 }
 
@@ -2307,8 +2321,24 @@ uint8_t UI::selectFromChordList(uint8_t slot) {
     uint8_t target = scriptSlots[slot].chordListTargetSlot;
     if (target > chordCount) target = chordCount; // Safeguard for add slot
 
-    uint8_t root = chordLibrary[scriptSlots[slot].chordListSelectedIdx].root;
-    uint8_t type = chordLibrary[scriptSlots[slot].chordListSelectedIdx].type;
+    uint8_t selectedIdx = scriptSlots[slot].chordListSelectedIdx;
+    
+    // Get the selected chord from the ranked cache (Package 4 integration)
+    // Fall back to chordLibrary if ranking not available
+    uint8_t root, type;
+    if (scriptSlots[slot].rankedChordCount > 0 && selectedIdx < scriptSlots[slot].rankedChordCount) {
+        // Use ranked chord
+        root = scriptSlots[slot].rankedChordRoots[selectedIdx];
+        type = scriptSlots[slot].rankedChordTypes[selectedIdx];
+    } else if (selectedIdx < 12) {
+        // Fall back to fixed library
+        root = chordLibrary[selectedIdx].root;
+        type = chordLibrary[selectedIdx].type;
+    } else {
+        // Safety fallback
+        root = 0;
+        type = 0;
+    }
 
     // If targeting the plus box, append a new chord when there's room; otherwise edit the last slot
     if (target >= chordCount) {
@@ -2354,6 +2384,37 @@ void UI::drawChordListOverlay(uint8_t slot, int16_t x, int16_t y, int16_t w, int
         return;
     }
 
+    // Get ranked chords from ranking engine on first draw or when overlay just opened
+    if (wasActive == false) {
+        // Overlay just opened - get ranked suggestions
+        if (scriptManager != nullptr) {
+            ChordSequencerScript* chordSeq = scriptManager->getChordSequencer(slot);
+            if (chordSeq != nullptr) {
+                uint8_t chordCount;
+                const ChordSequencerScript::ChordScore* rankedChords = chordSeq->getRankedChords(chordCount);
+                
+                if (rankedChords != nullptr && chordCount > 0) {
+                    // Cache the top 12 ranked chords
+                    uint8_t displayCount = (chordCount > 12) ? 12 : chordCount;
+                    for (uint8_t i = 0; i < displayCount; i++) {
+                        scriptSlots[slot].rankedChordRoots[i] = rankedChords[i].rootNote;
+                        scriptSlots[slot].rankedChordTypes[i] = rankedChords[i].type;
+                        scriptSlots[slot].rankedChordScores[i] = rankedChords[i].totalScore;
+                    }
+                    scriptSlots[slot].rankedChordCount = displayCount;
+                } else {
+                    // Fallback: use fixed chord library if ranking fails
+                    for (uint8_t i = 0; i < 12; i++) {
+                        scriptSlots[slot].rankedChordRoots[i] = chordLibrary[i].root;
+                        scriptSlots[slot].rankedChordTypes[i] = chordLibrary[i].type;
+                        scriptSlots[slot].rankedChordScores[i] = 0.5f;  // Neutral score
+                    }
+                    scriptSlots[slot].rankedChordCount = 12;
+                }
+            }
+        }
+    }
+
     // Overlay geometry (pad slightly above and below sequencer area)
     int16_t overlayX = x + 4;
     int16_t overlayW = w - 8;
@@ -2371,7 +2432,7 @@ void UI::drawChordListOverlay(uint8_t slot, int16_t x, int16_t y, int16_t w, int
     // Redraw entire overlay on first draw or when state was cleared
     if (firstDraw) {
         display->fillRect(overlayX, overlayY, overlayW, overlayH, COLOR_BG);
-        display->drawText(overlayX + 6, overlayY + 4, "chord library", COLOR_DIM, FONT_SMALL);
+        display->drawText(overlayX + 6, overlayY + 4, "chord suggestions", COLOR_DIM, FONT_SMALL);
     }
 
     // Grid layout: 3 columns x 4 rows
@@ -2387,11 +2448,24 @@ void UI::drawChordListOverlay(uint8_t slot, int16_t x, int16_t y, int16_t w, int
         uint8_t row = idx / cols;
         int16_t cellX = overlayX + cellGap + col * (cellW + cellGap);
         int16_t cellY = startY + row * (cellH + cellGap);
-        uint16_t bg = selected ? COLOR_ACCENT : 0x1082;
+        
+        // Background color: selected = cyan, top 3 = bright, rest = dimmed
+        uint16_t bg;
+        if (selected) {
+            bg = COLOR_ACCENT;  // Cyan for selected
+        } else if (idx < 3) {
+            bg = 0x1082;  // Dark gray for top 3 suggestions
+        } else {
+            bg = 0x0841;  // Darker gray for lower-ranked suggestions (dimmed)
+        }
+        
         display->fillRoundRect(cellX, cellY, cellW, cellH, 5, bg);
 
-        char label[8];
-        snprintf(label, sizeof(label), "%s %s", noteNames[chordLibrary[idx].root], typeNames[chordLibrary[idx].type]);
+        char label[12];
+        uint8_t root = scriptSlots[slot].rankedChordRoots[idx];
+        uint8_t type = scriptSlots[slot].rankedChordTypes[idx];
+        snprintf(label, sizeof(label), "%s %s", noteNames[root], typeNames[type]);
+        
         int16_t bx, by; uint16_t bw, bh;
         display->getTextBounds(label, 0, 0, &bx, &by, &bw, &bh, FONT_SMALL);
         int16_t textX = cellX + (cellW - bw) / 2 - bx;
@@ -2400,14 +2474,16 @@ void UI::drawChordListOverlay(uint8_t slot, int16_t x, int16_t y, int16_t w, int
     };
 
     if (firstDraw) {
-        for (uint8_t i = 0; i < 12; i++) {
+        for (uint8_t i = 0; i < scriptSlots[slot].rankedChordCount; i++) {
             drawCell(i, i == selectedIdx);
         }
     } else if (selectionChanged) {
-        if (lastSelectedIdx < 12) {
+        if (lastSelectedIdx < scriptSlots[slot].rankedChordCount) {
             drawCell(lastSelectedIdx, false);
         }
-        drawCell(selectedIdx, true);
+        if (selectedIdx < scriptSlots[slot].rankedChordCount) {
+            drawCell(selectedIdx, true);
+        }
     }
 
     scriptSlots[slot].lastChordListActive = active;

@@ -93,6 +93,12 @@ struct ScriptSlot {
     bool lastChordListActive;
     uint8_t lastChordListSelectedIdx;
     
+    // Chord ranking cache for overlay (Package 4)
+    uint8_t rankedChordCount;    // Number of ranked chords available
+    uint8_t rankedChordRoots[24];     // Root notes of ranked chords (0-11)
+    uint8_t rankedChordTypes[24];     // Types of ranked chords (0=major, 1=minor)
+    float rankedChordScores[24];      // Scores for each ranked chord (0.0-1.0)
+    
     // Beat count picker overlay
     bool beatCountPickerActive;  // true when beat count overlay is open
     uint8_t beatCountSelection;  // selected beat count (1-32)
