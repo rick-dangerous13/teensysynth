@@ -104,6 +104,11 @@ UI::UI() : display(nullptr), scriptManager(nullptr), clockTempo(DEFAULT_CLOCK_BP
         scriptSlots[i].lastGlobalTheoryMode = 255;
         scriptSlots[i].lastGlobalVoiceLeading = -1.0f;
         scriptSlots[i].lastGlobalEnergy = -1.0f;
+        
+        // Ranked chords (Package 4)
+        scriptSlots[i].rankedChordCount = 0;
+        scriptSlots[i].rankedChordsValid = false;
+        
         for (int j = 0; j < MAX_CHORD_SLOTS; j++) {
             scriptSlots[i].chordRoots[j] = 0;  // Default to C
             scriptSlots[i].chordTypes[j] = 0;  // Default to major
@@ -2268,6 +2273,9 @@ void UI::openChordList(uint8_t slot, uint8_t targetSlot) {
     scriptSlots[slot].chordListActive = true;
     scriptSlots[slot].lastChordListActive = false; // Force draw
     scriptSlots[slot].chordListTargetSlot = targetSlot;
+    
+    // Rank chords using the ranking engine (Package 4)
+    rankChordsForDisplay(slot);
 
     // Start selection on current chord value when editing an existing slot
     uint8_t startRoot = 0;
@@ -2307,8 +2315,20 @@ uint8_t UI::selectFromChordList(uint8_t slot) {
     uint8_t target = scriptSlots[slot].chordListTargetSlot;
     if (target > chordCount) target = chordCount; // Safeguard for add slot
 
-    uint8_t root = chordLibrary[scriptSlots[slot].chordListSelectedIdx].root;
-    uint8_t type = chordLibrary[scriptSlots[slot].chordListSelectedIdx].type;
+    uint8_t root, type;
+    
+    // Get chord from ranked or static list
+    if (scriptSlots[slot].rankedChordsValid && scriptSlots[slot].rankedChordCount > 0) {
+        uint8_t selectedIdx = scriptSlots[slot].chordListSelectedIdx;
+        if (selectedIdx >= scriptSlots[slot].rankedChordCount) selectedIdx = 0;
+        root = scriptSlots[slot].rankedChords[selectedIdx].rootNote;
+        type = (uint8_t)scriptSlots[slot].rankedChords[selectedIdx].type;
+    } else {
+        uint8_t selectedIdx = scriptSlots[slot].chordListSelectedIdx;
+        if (selectedIdx >= 12) selectedIdx = 0;  // Safety bounds check
+        root = chordLibrary[selectedIdx].root;
+        type = chordLibrary[selectedIdx].type;
+    }
 
     // If targeting the plus box, append a new chord when there's room; otherwise edit the last slot
     if (target >= chordCount) {
@@ -2340,6 +2360,23 @@ uint8_t UI::selectFromChordList(uint8_t slot) {
     return target;
 }
 
+void UI::rankChordsForDisplay(uint8_t slot) {
+    if (slot >= MAX_SCRIPTS || !scriptManager) {
+        scriptSlots[slot].rankedChordsValid = false;
+        return;
+    }
+    
+    // Request ranked chords from script manager
+    // This invokes the ranking engine internally
+    scriptSlots[slot].rankedChordCount = scriptManager->rankChordsForSequencer(
+        slot, 
+        scriptSlots[slot].rankedChords, 
+        24
+    );
+    
+    scriptSlots[slot].rankedChordsValid = (scriptSlots[slot].rankedChordCount > 0);
+}
+
 void UI::drawChordListOverlay(uint8_t slot, int16_t x, int16_t y, int16_t w, int16_t h) {
     if (!display || slot >= MAX_SCRIPTS) return;
 
@@ -2354,7 +2391,7 @@ void UI::drawChordListOverlay(uint8_t slot, int16_t x, int16_t y, int16_t w, int
         return;
     }
 
-    // Overlay geometry (pad slightly above and below sequencer area)
+    // Overlay geometry
     int16_t overlayX = x + 4;
     int16_t overlayW = w - 8;
     int16_t overlayY = y - 10;
@@ -2368,46 +2405,96 @@ void UI::drawChordListOverlay(uint8_t slot, int16_t x, int16_t y, int16_t w, int
     bool firstDraw = !wasActive;
     bool selectionChanged = (selectedIdx != lastSelectedIdx);
 
-    // Redraw entire overlay on first draw or when state was cleared
+    // Redraw entire overlay on first draw
     if (firstDraw) {
         display->fillRect(overlayX, overlayY, overlayW, overlayH, COLOR_BG);
-        display->drawText(overlayX + 6, overlayY + 4, "chord library", COLOR_DIM, FONT_SMALL);
+        
+        // Show title with ranking status
+        const char* title = scriptSlots[slot].rankedChordsValid ? "ranked chords" : "chord library";
+        display->drawText(overlayX + 6, overlayY + 4, title, COLOR_DIM, FONT_SMALL);
     }
 
-    // Grid layout: 3 columns x 4 rows
+    // Grid layout: 3 columns x 4 rows (12 chords visible)
     const uint8_t cols = 3;
     const uint8_t rows = 4;
     int16_t cellGap = 4;
     int16_t cellW = (overlayW - (cols + 1) * cellGap) / cols;
     int16_t cellH = 26;
     int16_t startY = overlayY + 18;
+    
+    // Determine which chord list to use
+    bool useRanked = scriptSlots[slot].rankedChordsValid && scriptSlots[slot].rankedChordCount > 0;
+    uint8_t displayCount = useRanked ? scriptSlots[slot].rankedChordCount : 12;
+    if (displayCount > 12) displayCount = 12;  // Show only 12 at a time
 
-    auto drawCell = [&](uint8_t idx, bool selected) {
-        uint8_t col = idx % cols;
-        uint8_t row = idx / cols;
+    auto drawCell = [&](uint8_t displayIdx, bool selected) {
+        // Get chord from ranked or static list
+        uint8_t chordRoot, chordType;
+        float score = 0.0f;
+        
+        if (useRanked && displayIdx < scriptSlots[slot].rankedChordCount) {
+            chordRoot = scriptSlots[slot].rankedChords[displayIdx].rootNote;
+            chordType = scriptSlots[slot].rankedChords[displayIdx].type;
+            score = scriptSlots[slot].rankedChords[displayIdx].totalScore;
+        } else if (!useRanked && displayIdx < 12) {
+            chordRoot = chordLibrary[displayIdx].root;
+            chordType = chordLibrary[displayIdx].type;
+            score = 0.5f;  // Neutral score for static list
+        } else {
+            return;  // Out of range
+        }
+        
+        uint8_t col = displayIdx % cols;
+        uint8_t row = displayIdx / cols;
         int16_t cellX = overlayX + cellGap + col * (cellW + cellGap);
         int16_t cellY = startY + row * (cellH + cellGap);
-        uint16_t bg = selected ? COLOR_ACCENT : 0x1082;
+        
+        // Color based on selection and ranking score
+        uint16_t bg;
+        uint16_t textColor;
+        
+        if (selected) {
+            bg = COLOR_ACCENT;        // Cyan for selected
+            textColor = COLOR_BG;
+        } else if (useRanked) {
+            // Visual de-emphasis based on score
+            if (score >= 0.8f) {
+                bg = 0x2945;  // Brighter gray for top-ranked
+                textColor = COLOR_FG;
+            } else if (score >= 0.6f) {
+                bg = 0x1082;  // Medium gray for mid-ranked
+                textColor = COLOR_DIM;
+            } else {
+                bg = 0x0841;  // Darker gray for low-ranked
+                textColor = 0x39E7;  // Dimmer text
+            }
+        } else {
+            bg = 0x1082;        // Standard gray for static list
+            textColor = COLOR_FG;
+        }
+        
         display->fillRoundRect(cellX, cellY, cellW, cellH, 5, bg);
 
         char label[8];
-        snprintf(label, sizeof(label), "%s %s", noteNames[chordLibrary[idx].root], typeNames[chordLibrary[idx].type]);
+        snprintf(label, sizeof(label), "%s %s", noteNames[chordRoot], typeNames[chordType]);
         int16_t bx, by; uint16_t bw, bh;
         display->getTextBounds(label, 0, 0, &bx, &by, &bw, &bh, FONT_SMALL);
         int16_t textX = cellX + (cellW - bw) / 2 - bx;
         int16_t textY = cellY + (cellH - bh) / 2 - by;
-        display->drawText(textX, textY, label, COLOR_BG, FONT_SMALL);
+        display->drawText(textX, textY, label, textColor, FONT_SMALL);
     };
 
     if (firstDraw) {
-        for (uint8_t i = 0; i < 12; i++) {
+        for (uint8_t i = 0; i < displayCount; i++) {
             drawCell(i, i == selectedIdx);
         }
     } else if (selectionChanged) {
-        if (lastSelectedIdx < 12) {
+        if (lastSelectedIdx < displayCount) {
             drawCell(lastSelectedIdx, false);
         }
-        drawCell(selectedIdx, true);
+        if (selectedIdx < displayCount) {
+            drawCell(selectedIdx, true);
+        }
     }
 
     scriptSlots[slot].lastChordListActive = active;

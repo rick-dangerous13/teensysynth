@@ -10,6 +10,7 @@
 #include <Arduino.h>
 #include "config.h"
 #include "display.h"
+#include "chord_ranking_engine.h"
 
 class ScriptManager;  // Forward declaration
 struct GlobalParameters;  // Forward declaration for chord sequencer globals
@@ -130,6 +131,11 @@ struct ScriptSlot {
     uint8_t lastGlobalTheoryMode;
     float lastGlobalVoiceLeading;
     float lastGlobalEnergy;
+    
+    // Ranked chord list (Package 4 - updated when chord list overlay opens)
+    RankedChord rankedChords[24];   // All 24 possible chords ranked by score
+    uint8_t rankedChordCount;       // Number of ranked chords available
+    bool rankedChordsValid;         // false if ranking failed or not yet computed
 };
 
 class UI {
@@ -283,6 +289,7 @@ public:
     void exitChordParamEdit(uint8_t slot, bool save);
     void adjustChordParam(uint8_t slot, int8_t delta);
     void syncChordParamsFromScript(uint8_t slot, uint8_t chordSlot);
+    void rankChordsForDisplay(uint8_t slot);  // Package 4: Rank chords using ranking engine
     
 private:
     Display* display;
