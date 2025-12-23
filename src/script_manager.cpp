@@ -1,0 +1,849 @@
+/**
+ * Script Manager Implementation
+ * 
+ * Handles concurrent script execution similar to Norns Shield
+ * 
+ * Note: This is a stub implementation. In a full implementation,
+ * this would integrate with SuperCollider or a Lua interpreter
+ * similar to the Norns environment.
+ */
+
+#include "script_manager.h"
+#include <string.h>
+#include <stdio.h>
+
+// Script library definition
+const ScriptLibraryEntry ScriptManager::scriptLibrary[] = {
+    {"Poliquencer", "Metropolix-style Artistic Sequencer", 2},
+    {"Symphony Chord Sequencer", "4-Chord Harmonic Sequencer (Oxi-style)", 5},
+    {"LFO", "Low Frequency Oscillator", 0},
+    {"Envelope", "ADSR Envelope (Coming Soon)", 3},
+    {"Clock", "Clock Divider (Coming Soon)", 4}
+};
+
+const uint8_t ScriptManager::scriptLibraryCount = sizeof(ScriptManager::scriptLibrary) / sizeof(ScriptLibraryEntry);
+
+ScriptManager::ScriptManager() 
+    : dacInitialized(false)
+    , lastUpdateTime(0) {
+    // Initialize all script slots
+    for (int i = 0; i < MAX_SCRIPTS; i++) {
+        memset(&scripts[i], 0, sizeof(ScriptInfo));
+        scripts[i].state = ScriptState::EMPTY;
+        strcpy(scripts[i].name, "empty");
+        strcpy(scripts[i].output, "");
+        lfoInstances[i] = nullptr;
+        poliquencerInstances[i] = nullptr;
+        chordSequencerInstances[i] = nullptr;
+        touchTestInstances[i] = nullptr;
+    }
+}
+
+void ScriptManager::begin() {
+    lastUpdateTime = millis();
+    
+    Serial.println("ScriptManager: Initializing...");
+    
+    // Initialize I2C with conservative clock speed
+    // Teensy 4.1: SDA=18 (I2C4), SCL=19 (I2C4) by default
+    Serial.println("ScriptManager: Initializing I2C bus...");
+    Wire.begin();
+    // Set I2C clock to 100kHz for reliability with multiple devices
+    Wire.setClock(100000);
+    delay(100);  // Wait for I2C to stabilize
+    
+    // Initialize TCA9548A Multiplexer first
+    Serial.println("ScriptManager: Checking for TCA9548A I2C Multiplexer...");
+    multiplexerPresent = false;
+    currentMultiplexerChannel = 255;  // Track which channel we're on
+    
+    Wire.beginTransmission(TCA9548A_ADDR);
+    if (Wire.endTransmission() == 0) {
+        multiplexerPresent = true;
+        Serial.println("  ✓ TCA9548A (0x70): Detected");
+        // Initialize to channel 0
+        selectMultiplexerChannel(MCP4725_CHANNEL_1);
+    } else {
+        Serial.println("  ✗ TCA9548A (0x70): NOT FOUND - Multiplexer required for your hardware");
+        Serial.println("     See MCP4725_DUAL_DAC_WITH_MULTIPLEXER.md for wiring instructions");
+        multiplexerPresent = false;
+    }
+    
+    // Initialize MCP4725 DACs with detailed diagnostics
+    Serial.println("ScriptManager: Initializing MCP4725 DACs...");
+    
+    if (!multiplexerPresent) {
+        Serial.println("  ✗ Skipping DAC initialization - Multiplexer not found");
+        dacInitialized = false;
+        return;
+    }
+    
+    // Initialize DAC1 on Channel 0
+    Serial.println("  Attempting to initialize DAC1 (address 0x60, multiplexer channel 0)...");
+    selectMultiplexerChannel(MCP4725_CHANNEL_1);
+    delay(10);  // Small delay for multiplexer to switch
+    bool dac1Ready = dac1.begin(MCP4725_ADDR_1);
+    
+    // Initialize DAC2 on Channel 1
+    Serial.println("  Attempting to initialize DAC2 (address 0x60, multiplexer channel 1)...");
+    selectMultiplexerChannel(MCP4725_CHANNEL_2);
+    delay(10);  // Small delay for multiplexer to switch
+    bool dac2Ready = dac2.begin(MCP4725_ADDR_2);
+    
+    if (dac1Ready && dac2Ready) {
+        dacInitialized = true;
+        Serial.println("  ✓ DAC1 (0x60, Channel 0): Successfully initialized");
+        Serial.println("  ✓ DAC2 (0x60, Channel 1): Successfully initialized");
+        Serial.println("  Ready to output 2-channel CV (Pitch + Gate)");
+    } else {
+        Serial.println("  ✗ WARNING: One or more DACs not detected");
+        if (!dac1Ready) {
+            Serial.println("  ✗ DAC1 (0x60, Channel 0): NOT FOUND");
+            Serial.println("     - Check multiplexer channel 0 wiring (SD0/SC0)");
+        }
+        if (!dac2Ready) {
+            Serial.println("  ✗ DAC2 (0x60, Channel 1): NOT FOUND");
+            Serial.println("     - Check multiplexer channel 1 wiring (SD1/SC1)");
+        }
+        Serial.println("  CV output will be unavailable");
+        dacInitialized = false;
+    }
+    
+    Serial.println("ScriptManager: Initialized");
+}
+
+void ScriptManager::update() {
+    // Update each running script (no throttling for LFO precision)
+    for (int i = 0; i < MAX_SCRIPTS; i++) {
+        if (scripts[i].state == ScriptState::RUNNING) {
+            executeScriptFrame(i);
+        }
+    }
+}
+
+bool ScriptManager::loadScript(uint8_t slot, const char* path) {
+    if (slot >= MAX_SCRIPTS) {
+        Serial.println("ScriptManager: Invalid slot");
+        return false;
+    }
+    
+    // Unload any existing script
+    if (scripts[slot].state != ScriptState::EMPTY) {
+        unloadScript(slot);
+    }
+    
+    scripts[slot].state = ScriptState::LOADING;
+    
+    // Copy path with null termination
+    strncpy(scripts[slot].path, path, sizeof(scripts[slot].path) - 1);
+    scripts[slot].path[sizeof(scripts[slot].path) - 1] = '\0';
+    
+    // Parse script header for metadata
+    if (!parseScriptHeader(slot, path)) {
+        scripts[slot].state = ScriptState::ERROR;
+        strcpy(scripts[slot].output, "Error: Failed to load");
+        return false;
+    }
+    
+    // Start the script automatically
+    scripts[slot].state = ScriptState::RUNNING;
+    scripts[slot].lastUpdate = millis();
+    
+    Serial.print("ScriptManager: Loaded script in slot ");
+    Serial.println(slot);
+    
+    return true;
+}
+
+bool ScriptManager::unloadScript(uint8_t slot) {
+    if (slot >= MAX_SCRIPTS) return false;
+    
+    // Stop script if running
+    if (scripts[slot].state == ScriptState::RUNNING) {
+        stopScript(slot);
+    }
+    
+    // Clean up LFO instance if exists
+    if (lfoInstances[slot] != nullptr) {
+        lfoInstances[slot]->stop();
+        delete lfoInstances[slot];
+        lfoInstances[slot] = nullptr;
+    }
+    
+    // Clean up sequencer instance if exists
+    // Basic sequencer (type 1) is deprecated
+    
+    // Clean up poliquencer instance if exists
+    if (poliquencerInstances[slot] != nullptr) {
+        poliquencerInstances[slot]->stop();
+        delete poliquencerInstances[slot];
+        poliquencerInstances[slot] = nullptr;
+    }
+    
+    // Clean up chord sequencer instance if exists
+    if (chordSequencerInstances[slot] != nullptr) {
+        chordSequencerInstances[slot]->stop();
+        delete chordSequencerInstances[slot];
+        chordSequencerInstances[slot] = nullptr;
+    }
+    
+    // Clear script data
+    memset(&scripts[slot], 0, sizeof(ScriptInfo));
+    scripts[slot].state = ScriptState::EMPTY;
+    strcpy(scripts[slot].name, "empty");
+    
+    Serial.print("ScriptManager: Unloaded slot ");
+    Serial.println(slot);
+    
+    return true;
+}
+
+bool ScriptManager::startScript(uint8_t slot) {
+    if (slot >= MAX_SCRIPTS) return false;
+    if (scripts[slot].state == ScriptState::EMPTY) return false;
+    
+    scripts[slot].state = ScriptState::RUNNING;
+    scripts[slot].lastUpdate = millis();
+    
+    return true;
+}
+
+bool ScriptManager::stopScript(uint8_t slot) {
+    if (slot >= MAX_SCRIPTS) return false;
+    
+    if (scripts[slot].state == ScriptState::RUNNING || 
+        scripts[slot].state == ScriptState::PAUSED) {
+        scripts[slot].state = ScriptState::LOADING;  // Ready to run again
+        strcpy(scripts[slot].output, "Stopped");
+    }
+    
+    return true;
+}
+
+bool ScriptManager::pauseScript(uint8_t slot) {
+    if (slot >= MAX_SCRIPTS) return false;
+    
+    if (scripts[slot].state == ScriptState::RUNNING) {
+        scripts[slot].state = ScriptState::PAUSED;
+        return true;
+    }
+    
+    return false;
+}
+
+bool ScriptManager::resumeScript(uint8_t slot) {
+    if (slot >= MAX_SCRIPTS) return false;
+    
+    if (scripts[slot].state == ScriptState::PAUSED) {
+        scripts[slot].state = ScriptState::RUNNING;
+        return true;
+    }
+    
+    return false;
+}
+
+bool ScriptManager::isScriptRunning(uint8_t slot) {
+    if (slot >= MAX_SCRIPTS) return false;
+    return scripts[slot].state == ScriptState::RUNNING;
+}
+
+bool ScriptManager::isScriptLoaded(uint8_t slot) {
+    if (slot >= MAX_SCRIPTS) return false;
+    return scripts[slot].state != ScriptState::EMPTY;
+}
+
+ScriptState ScriptManager::getScriptState(uint8_t slot) {
+    if (slot >= MAX_SCRIPTS) return ScriptState::EMPTY;
+    return scripts[slot].state;
+}
+
+const char* ScriptManager::getScriptName(uint8_t slot) {
+    if (slot >= MAX_SCRIPTS) return "";
+    return scripts[slot].name;
+}
+
+const char* ScriptManager::getScriptOutput(uint8_t slot) {
+    if (slot >= MAX_SCRIPTS) return "";
+    return scripts[slot].output;
+}
+
+void ScriptManager::sendToScript(uint8_t slot, const char* message) {
+    if (slot >= MAX_SCRIPTS) return;
+    if (scripts[slot].state != ScriptState::RUNNING) return;
+    
+    // In a full implementation, this would send the message
+    // to the script's message handler
+    Serial.print("ScriptManager: Message to slot ");
+    Serial.print(slot);
+    Serial.print(": ");
+    Serial.println(message);
+}
+
+uint8_t ScriptManager::getScriptLibraryCount() {
+    return scriptLibraryCount;
+}
+
+const ScriptLibraryEntry* ScriptManager::getScriptLibraryEntry(uint8_t index) {
+    if (index >= scriptLibraryCount) return nullptr;
+    return &scriptLibrary[index];
+}
+
+bool ScriptManager::loadScriptFromLibrary(uint8_t slot, uint8_t libraryIndex) {
+    Serial.print("loadScriptFromLibrary called: slot=");
+    Serial.print(slot);
+    Serial.print(", libraryIndex=");
+    Serial.println(libraryIndex);
+    
+    // Check for special Input Test index (100)
+    if (libraryIndex == 100) {
+        if (slot >= MAX_SCRIPTS) return false;
+        
+        // Unload any existing script
+        if (scripts[slot].state != ScriptState::EMPTY) {
+            Serial.println("Unloading existing script");
+            unloadScript(slot);
+        }
+        
+        Serial.println("Creating touch test instance...");
+        touchTestInstances[slot] = new TouchTestScript();
+        touchTestInstances[slot]->start();
+        
+        strcpy(scripts[slot].name, "Input Test");
+        strcpy(scripts[slot].path, "builtin://inputtest");
+        scripts[slot].state = ScriptState::RUNNING;
+        
+        Serial.print("Loaded Input Test in slot ");
+        Serial.println(slot);
+        return true;
+    }
+    
+    if (slot >= MAX_SCRIPTS || libraryIndex >= scriptLibraryCount) {
+        Serial.println("ERROR: Invalid slot or library index");
+        Serial.print("  MAX_SCRIPTS=");
+        Serial.print(MAX_SCRIPTS);
+        Serial.print(", scriptLibraryCount=");
+        Serial.println(scriptLibraryCount);
+        return false;
+    }
+    
+    // Unload any existing script
+    if (scripts[slot].state != ScriptState::EMPTY) {
+        Serial.println("Unloading existing script");
+        unloadScript(slot);
+    }
+    
+    const ScriptLibraryEntry* entry = &scriptLibrary[libraryIndex];
+    Serial.print("Entry name: ");
+    Serial.println(entry->name);
+    Serial.print("Entry scriptType: ");
+    Serial.println(entry->scriptType);
+    
+    // Load based on script type
+    if (entry->scriptType == 0) {  // LFO
+        lfoInstances[slot] = new LFOScript();
+        if (!lfoInstances[slot]->begin()) {
+            delete lfoInstances[slot];
+            lfoInstances[slot] = nullptr;
+            return false;
+        }
+        
+        // Set shared DACs (LFO uses DAC1)
+        if (dacInitialized) {
+            lfoInstances[slot]->setDAC(&dac1, &dac2);
+        }
+        
+        strcpy(scripts[slot].name, entry->name);
+        strcpy(scripts[slot].path, "builtin://lfo");
+        scripts[slot].state = ScriptState::RUNNING;
+        
+        Serial.print("Loaded LFO in slot ");
+        Serial.println(slot);
+        return true;
+    } else if (entry->scriptType == 1) {  // Basic Sequencer (deprecated, type 2 is used instead)
+        Serial.println("ERROR: Basic sequencer type 1 is no longer supported");
+        return false;
+        
+        Serial.print("Loaded Sequencer in slot ");
+        Serial.println(slot);
+        Serial.print("Script name: ");
+        Serial.println(scripts[slot].name);
+        Serial.print("Script state: RUNNING\n");
+        return true;
+    } else if (entry->scriptType == 2) {  // Poliquencer
+        Serial.println("Creating poliquencer instance...");
+        poliquencerInstances[slot] = new PoliquencerScript();
+        if (!poliquencerInstances[slot]->begin()) {
+            Serial.println("ERROR: Poliquencer begin() failed");
+            delete poliquencerInstances[slot];
+            poliquencerInstances[slot] = nullptr;
+            return false;
+        }
+        Serial.println("✓ Poliquencer begin() successful");
+        
+        // Set shared DACs (Poliquencer uses DAC1 for pitch CV, DAC2 for gate)
+        if (dacInitialized) {
+            Serial.println("DACs initialized - passing to Poliquencer");
+            Serial.print("  Passing dac1 @ ");
+            Serial.println((unsigned long)&dac1, HEX);
+            Serial.print("  Passing dac2 @ ");
+            Serial.println((unsigned long)&dac2, HEX);
+            poliquencerInstances[slot]->setDAC(&dac1, &dac2);
+        } else {
+            Serial.println("WARNING: DACs not initialized - Poliquencer will run without CV output");
+            poliquencerInstances[slot]->setDAC(nullptr, nullptr);
+        }
+        
+        // Connect to active chord sequencer if available
+        for (int i = 0; i < MAX_SCRIPTS; i++) {
+            if (chordSequencerInstances[i] != nullptr) {
+                Serial.print("Connecting Poliquencer to ChordSequencer in slot ");
+                Serial.println(i);
+                poliquencerInstances[slot]->setChordSequencer(chordSequencerInstances[i]);
+                break;  // Only connect to first active chord sequencer
+            }
+        }
+        
+        // Set default tempo
+        poliquencerInstances[slot]->setGlobalTempo(DEFAULT_CLOCK_BPM);
+        Serial.print("Tempo set to ");
+        Serial.println(DEFAULT_CLOCK_BPM);
+        
+        strcpy(scripts[slot].name, entry->name);
+        strcpy(scripts[slot].path, "builtin://poliquencer");
+        scripts[slot].state = ScriptState::RUNNING;
+        
+        Serial.print("Loaded Poliquencer in slot ");
+        Serial.println(slot);
+        return true;
+    } else if (entry->scriptType == 5) {  // ChordSequencer
+        Serial.println("Creating chord sequencer instance...");
+        chordSequencerInstances[slot] = new ChordSequencerScript();
+        if (!chordSequencerInstances[slot]->begin()) {
+            Serial.println("ERROR: ChordSequencer begin() failed");
+            delete chordSequencerInstances[slot];
+            chordSequencerInstances[slot] = nullptr;
+            return false;
+        }
+        Serial.println("ChordSequencer begin() successful");
+        
+        // Connect to active poliquencer instances
+        for (int i = 0; i < MAX_SCRIPTS; i++) {
+            if (poliquencerInstances[i] != nullptr) {
+                Serial.print("Connecting ChordSequencer to Poliquencer in slot ");
+                Serial.println(i);
+                poliquencerInstances[i]->setChordSequencer(chordSequencerInstances[slot]);
+            }
+        }
+        
+        // Set default tempo
+        chordSequencerInstances[slot]->setGlobalTempo(DEFAULT_CLOCK_BPM);
+        Serial.print("Tempo set to ");
+        Serial.println(DEFAULT_CLOCK_BPM);
+        
+        strcpy(scripts[slot].name, entry->name);
+        strcpy(scripts[slot].path, "builtin://chordseq");
+        scripts[slot].state = ScriptState::RUNNING;
+        
+        Serial.print("Loaded ChordSequencer in slot ");
+        Serial.println(slot);
+        return true;
+    }
+    
+    // Other script types not yet implemented
+    strcpy(scripts[slot].output, "Coming soon");
+    return false;
+}
+
+bool ScriptManager::parseScriptHeader(uint8_t slot, const char* path) {
+    // Stub implementation - would parse script file for metadata
+    // For now, extract name from path
+    
+    const char* lastSlash = strrchr(path, '/');
+    const char* filename = lastSlash ? lastSlash + 1 : path;
+    
+    // Copy filename as script name (without extension) with null termination
+    strncpy(scripts[slot].name, filename, sizeof(scripts[slot].name) - 1);
+    scripts[slot].name[sizeof(scripts[slot].name) - 1] = '\0';
+    
+    // Remove .lua or .scd extension if present
+    char* dot = strrchr(scripts[slot].name, '.');
+    if (dot) *dot = '\0';
+    
+    strcpy(scripts[slot].author, "unknown");
+    strcpy(scripts[slot].version, "1.0");
+    
+    return true;
+}
+
+void ScriptManager::executeScriptFrame(uint8_t slot) {
+    // Update LFO if this slot has one
+    if (lfoInstances[slot] != nullptr) {
+        lfoInstances[slot]->update();
+        
+        // Update display output
+        lfoInstances[slot]->getDisplayText(scripts[slot].output, sizeof(scripts[slot].output));
+        return;
+    }
+    
+    // Update sequencer if this slot has one
+    // Basic sequencer (type 1) is deprecated
+    
+    // Update poliquencer if this slot has one
+    if (poliquencerInstances[slot] != nullptr) {
+        poliquencerInstances[slot]->update();
+        
+        // Update display output
+        poliquencerInstances[slot]->getDisplayText(scripts[slot].output, sizeof(scripts[slot].output));
+        return;
+    }
+    
+    // Update chord sequencer if this slot has one
+    if (chordSequencerInstances[slot] != nullptr) {
+        chordSequencerInstances[slot]->update();
+        
+        // Update display output
+        chordSequencerInstances[slot]->getDisplayText(scripts[slot].output, sizeof(scripts[slot].output));
+        return;
+    }
+    
+    // Update touch test if this slot has one
+    if (touchTestInstances[slot] != nullptr) {
+        touchTestInstances[slot]->update();
+        strcpy(scripts[slot].output, "Testing inputs...");
+        return;
+    }
+    
+    // Other script types...
+    unsigned long runtime = millis() - scripts[slot].lastUpdate;
+    snprintf(scripts[slot].output, sizeof(scripts[slot].output),
+             "Running: %lu.%lus", runtime / 1000, (runtime % 1000) / 100);
+}
+
+bool ScriptManager::getLFOWaveformData(uint8_t slot, uint8_t* waveType, float* phase) {
+    if (slot >= MAX_SCRIPTS || lfoInstances[slot] == nullptr) {
+        return false;
+    }
+    
+    if (waveType) *waveType = lfoInstances[slot]->getWaveform();
+    if (phase) *phase = lfoInstances[slot]->getCurrentValue() * 2.0f * PI;
+    return true;
+}
+
+void ScriptManager::setLFOWaveform(uint8_t slot, uint8_t waveType) {
+    if (slot >= MAX_SCRIPTS || lfoInstances[slot] == nullptr) {
+        return;
+    }
+    lfoInstances[slot]->setWaveform(waveType);
+}
+
+void ScriptManager::setLFOFrequency(uint8_t slot, float frequency) {
+    if (slot >= MAX_SCRIPTS || lfoInstances[slot] == nullptr) {
+        return;
+    }
+    lfoInstances[slot]->setFrequency(frequency);
+}
+
+void ScriptManager::setLFOLevel(uint8_t slot, float level) {
+    if (slot >= MAX_SCRIPTS || lfoInstances[slot] == nullptr) {
+        return;
+    }
+    lfoInstances[slot]->setLevel(level);
+}
+
+bool ScriptManager::getSequencerData(uint8_t slot, uint8_t* currentStep, int8_t stepValues[8], uint8_t stepDurations[8]) {
+    if (slot >= MAX_SCRIPTS) {
+        Serial.print("getSequencerData: Invalid slot ");
+        Serial.println(slot);
+        return false;
+    }
+    // Basic sequencer (type 1) is deprecated
+    return false;
+}
+
+void ScriptManager::setGlobalTempo(float bpm) {
+    // Update tempo for all running sequencers (poliquencer only, basic seq deprecated)
+    for (int i = 0; i < MAX_SCRIPTS; i++) {
+        if (poliquencerInstances[i] != nullptr) {
+            poliquencerInstances[i]->setGlobalTempo(bpm);
+        }
+        if (chordSequencerInstances[i] != nullptr) {
+            chordSequencerInstances[i]->setGlobalTempo(bpm);
+        }
+    }
+}
+
+void ScriptManager::setSequencerStepValue(uint8_t slot, uint8_t step, int8_t value) {
+    // Basic sequencer (type 1) is deprecated
+}
+
+void ScriptManager::setSequencerStepDuration(uint8_t slot, uint8_t step, uint8_t duration) {
+    // Basic sequencer (type 1) is deprecated
+}
+
+// ========== POLIQUENCER METHODS ==========
+
+bool ScriptManager::getPoliquencerData(uint8_t slot, uint8_t* currentStep, uint8_t* currentBeat, int8_t stepValues[8], uint8_t stepDurations[8], uint8_t gateModes[8], uint8_t* direction, bool* steamTrigger) {
+    if (slot >= MAX_SCRIPTS || poliquencerInstances[slot] == nullptr) {
+        return false;
+    }
+    
+    if (currentStep) *currentStep = poliquencerInstances[slot]->getCurrentStep();
+    if (currentBeat) *currentBeat = poliquencerInstances[slot]->getCurrentBeat();
+    if (direction) *direction = (uint8_t)poliquencerInstances[slot]->getDirection();
+    if (steamTrigger) *steamTrigger = poliquencerInstances[slot]->isSteamTrigger();
+    
+    if (stepValues) {
+        for (int i = 0; i < 8; i++) {
+            stepValues[i] = poliquencerInstances[slot]->getStepValue(i);
+        }
+    }
+    if (stepDurations) {
+        for (int i = 0; i < 8; i++) {
+            stepDurations[i] = poliquencerInstances[slot]->getStepDuration(i);
+        }
+    }
+    if (gateModes) {
+        for (int i = 0; i < 8; i++) {
+            gateModes[i] = (uint8_t)poliquencerInstances[slot]->getStepGateMode(i);
+        }
+    }
+    
+    return true;
+}
+
+void ScriptManager::setPoliquencerStepValue(uint8_t slot, uint8_t step, int8_t value) {
+    if (slot >= MAX_SCRIPTS || poliquencerInstances[slot] == nullptr) return;
+    poliquencerInstances[slot]->setStepValue(step, value);
+}
+
+void ScriptManager::setPoliquencerStepDuration(uint8_t slot, uint8_t step, uint8_t duration) {
+    if (slot >= MAX_SCRIPTS || poliquencerInstances[slot] == nullptr) return;
+    poliquencerInstances[slot]->setStepDuration(step, duration);
+}
+
+void ScriptManager::setPoliquencerStepGateMode(uint8_t slot, uint8_t step, uint8_t gateMode) {
+    if (slot >= MAX_SCRIPTS || poliquencerInstances[slot] == nullptr) return;
+    poliquencerInstances[slot]->setStepGateMode(step, (GateMode)gateMode);
+}
+
+void ScriptManager::setPoliquencerDirection(uint8_t slot, uint8_t direction) {
+    if (slot >= MAX_SCRIPTS || poliquencerInstances[slot] == nullptr) return;
+    poliquencerInstances[slot]->setDirection((DirectionMode)direction);
+}
+
+// ========== CHORD SEQUENCER METHODS ==========
+
+bool ScriptManager::getChordSequencerData(uint8_t slot, uint8_t chordRoots[MAX_CHORD_SLOTS], uint8_t chordTypes[MAX_CHORD_SLOTS], uint8_t chordBeats[MAX_CHORD_SLOTS], uint8_t* currentChordSlot, uint8_t* beatCounter, uint8_t* chordCount) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return false;
+    }
+    
+    if (currentChordSlot) *currentChordSlot = chordSequencerInstances[slot]->getCurrentChordSlot();
+    if (beatCounter) *beatCounter = chordSequencerInstances[slot]->getBeatCounter();
+    if (chordCount) *chordCount = chordSequencerInstances[slot]->getChordCount();
+    
+    if (chordRoots && chordTypes && chordBeats) {
+        for (int i = 0; i < MAX_CHORD_SLOTS; i++) {
+            uint8_t root;
+            ChordType type;
+            chordSequencerInstances[slot]->getChord(i, &root, &type);
+            chordRoots[i] = root;
+            chordTypes[i] = (uint8_t)type;
+            chordBeats[i] = chordSequencerInstances[slot]->getChordBeats(i);
+        }
+    }
+    
+    return true;
+}
+
+void ScriptManager::resetChordSequencer(uint8_t slot) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return;
+    }
+    chordSequencerInstances[slot]->clearChords();
+}
+
+void ScriptManager::setChordSequencerChord(uint8_t slot, uint8_t chordSlot, uint8_t rootNote, uint8_t chordType) {
+    if (slot >= MAX_SCRIPTS || chordSlot >= MAX_CHORD_SLOTS || chordSequencerInstances[slot] == nullptr) {
+        return;
+    }
+    
+    ChordType type = (chordType == 0) ? CHORD_MAJOR : CHORD_MINOR;
+    chordSequencerInstances[slot]->setChord(chordSlot, rootNote, type);
+}
+
+void ScriptManager::setChordSequencerChordBeats(uint8_t slot, uint8_t chordSlot, uint8_t beats) {
+    if (slot >= MAX_SCRIPTS || chordSlot >= MAX_CHORD_SLOTS || chordSequencerInstances[slot] == nullptr) {
+        return;
+    }
+    
+    chordSequencerInstances[slot]->setChordBeats(chordSlot, beats);
+}
+
+bool ScriptManager::getChordSequencerGlobals(uint8_t slot, GlobalParameters* globals) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr || globals == nullptr) {
+        return false;
+    }
+    
+    *globals = chordSequencerInstances[slot]->getGlobalParameters();
+    return true;
+}
+
+void ScriptManager::setChordSequencerRoot(uint8_t slot, MusicalRoot root) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return;
+    }
+    
+    chordSequencerInstances[slot]->setRoot(root);
+}
+
+void ScriptManager::setChordSequencerDegree(uint8_t slot, ScaleDegree degree) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return;
+    }
+    
+    chordSequencerInstances[slot]->setDegree(degree);
+}
+
+ScaleDegree ScriptManager::getChordSequencerDegree(uint8_t slot) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return DEGREE_MAJOR;  // Default fallback
+    }
+    
+    return chordSequencerInstances[slot]->getDegree();
+}
+
+void ScriptManager::setChordSequencerTheoryMode(uint8_t slot, TheoryMode mode) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return;
+    }
+    
+    chordSequencerInstances[slot]->setTheoryMode(mode);
+}
+
+void ScriptManager::setChordSequencerVoiceLeading(uint8_t slot, float compactness) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return;
+    }
+    
+    chordSequencerInstances[slot]->setVoiceLeadingCompactness(compactness);
+}
+
+void ScriptManager::setChordSequencerEnergy(uint8_t slot, float energy) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return;
+    }
+    
+    chordSequencerInstances[slot]->setEnergy(energy);
+}
+
+// Per-chord parameter access
+void ScriptManager::setChordSequencerChordInversion(uint8_t slot, uint8_t chordSlot, uint8_t inversion) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return;
+    }
+    chordSequencerInstances[slot]->setChordInversion(chordSlot, inversion);
+}
+
+uint8_t ScriptManager::getChordSequencerChordInversion(uint8_t slot, uint8_t chordSlot) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return 255;
+    }
+    return chordSequencerInstances[slot]->getChordInversion(chordSlot);
+}
+
+void ScriptManager::setChordSequencerChordSpread(uint8_t slot, uint8_t chordSlot, float spread) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return;
+    }
+    chordSequencerInstances[slot]->setChordSpread(chordSlot, spread);
+}
+
+float ScriptManager::getChordSequencerChordSpread(uint8_t slot, uint8_t chordSlot) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return -1.0f;
+    }
+    return chordSequencerInstances[slot]->getChordSpread(chordSlot);
+}
+
+void ScriptManager::setChordSequencerChordTheoryMode(uint8_t slot, uint8_t chordSlot, uint8_t mode) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return;
+    }
+    chordSequencerInstances[slot]->setChordTheoryMode(chordSlot, mode);
+}
+
+uint8_t ScriptManager::getChordSequencerChordTheoryMode(uint8_t slot, uint8_t chordSlot) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr) {
+        return 255;
+    }
+    return chordSequencerInstances[slot]->getChordTheoryMode(chordSlot);
+}
+
+uint8_t ScriptManager::rankChordsForSequencer(uint8_t slot, RankedChord* results, uint8_t maxResults) {
+    if (slot >= MAX_SCRIPTS || chordSequencerInstances[slot] == nullptr || !results) {
+        return 0;
+    }
+    
+    ChordSequencerScript* sequencer = chordSequencerInstances[slot];
+    
+    // Get current context from sequencer
+    const GlobalParameters& globals = sequencer->getGlobalParameters();
+    
+    // For ranking purposes, we rank candidates relative to the LAST added chord
+    // (which is the most recent in the progression)
+    // This makes suggestions contextual to what was just added
+    uint8_t currentRoot = 0;
+    ChordType currentType = CHORD_MAJOR;
+    
+    if (sequencer->getChordCount() > 0) {
+        // Use the last chord (most recently added) for voice-leading context
+        uint8_t lastChordSlot = sequencer->getChordCount() - 1;
+        sequencer->getChord(lastChordSlot, &currentRoot, &currentType);
+    } else {
+        // No chords yet - use neutral sentinel so voice-leading has minimal effect
+        currentRoot = 255;  // Invalid root triggers no voice-leading filtering
+    }
+    
+    // Set up ranking engine with current context
+    chordRankingEngine.setContext(globals, currentRoot, currentType);
+    
+    // Get local overrides from current chord (if available and slot is valid)
+    uint8_t chordSlot = sequencer->getCurrentChordSlot();
+    if (chordSlot < sequencer->getChordCount()) {
+        uint8_t localTheoryMode = sequencer->getChordTheoryMode(chordSlot);
+        float localSpread = sequencer->getChordSpread(chordSlot);
+        uint8_t localInversion = sequencer->getChordInversion(chordSlot);
+        
+        chordRankingEngine.setLocalOverrides(localTheoryMode, localSpread, localInversion);
+    }
+    
+    // Rank all chords and return results
+    return chordRankingEngine.rankChords(results, maxResults);
+}
+
+void ScriptManager::selectMultiplexerChannel(uint8_t channel) {
+    if (!multiplexerPresent || channel > 7) {
+        return;  // Multiplexer not available or invalid channel
+    }
+    
+    if (currentMultiplexerChannel == channel) {
+        return;  // Already on this channel
+    }
+    
+    // Send command to TCA9548A to select channel
+    // Writing (1 << channel) to the multiplexer selects that channel
+    Wire.beginTransmission(TCA9548A_ADDR);
+    Wire.write(1 << channel);  // Set only the bit corresponding to desired channel
+    uint8_t result = Wire.endTransmission();
+    
+    if (result == 0) {
+        currentMultiplexerChannel = channel;
+        // Serial.print("Multiplexer: Selected channel ");
+        // Serial.println(channel);
+    } else {
+        Serial.print("ERROR: Failed to select multiplexer channel ");
+        Serial.println(channel);
+    }
+}
+
